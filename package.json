@@ -1,0 +1,31 @@
+{
+  "name": "github-html-preview",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome extension that adds a one-click Preview for .html files on GitHub.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eeselapp/github-html-preview.git"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vite build && vitest run --config vitest.e2e.config.ts"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.4.0",
+    "@types/chrome": "^0.1.37",
+    "@types/node": "^25.5.0",
+    "jsdom": "^20.0.3",
+    "playwright": "^1.58.2",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0",
+    "vite-plugin-zip-pack": "^1.2.4",
+    "vitest": "^4.1.9",
+    "vitest-environment-web-ext": "^0.0.3"
+  }
+}

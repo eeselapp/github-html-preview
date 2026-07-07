@@ -1,0 +1,156 @@
+:root {
+  color-scheme: light dark;
+}
+
+/* GitHub's chosen theme is passed as ?theme= and stamped onto <html> by main.ts,
+   so the preview chrome follows the page's theme, not just the OS scheme. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  /* navbar (optional) + artifact frame stack vertically and fill the viewport */
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: Canvas;
+  font:
+    14px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+#artifact-frame {
+  flex: 1 1 auto;
+  display: block;
+  border: 0;
+  width: 100%;
+  min-height: 0;
+  background: #fff;
+}
+
+/* --- branded navbar (shown above the rendered artifact in the overlay) --- */
+.eesel-navbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  background: Canvas;
+  color: CanvasText;
+}
+
+.eesel-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.eesel-logo {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+}
+
+.eesel-titles {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.eesel-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.eesel-filename {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eesel-actions {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eesel-navbtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: CanvasText;
+  background: color-mix(in srgb, CanvasText 6%, transparent);
+  border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.eesel-navbtn:hover {
+  background: color-mix(in srgb, CanvasText 12%, transparent);
+}
+
+/* The close button carries eesel's accent so the primary exit reads first. */
+.eesel-navbtn-primary {
+  color: #fff;
+  background: #4f46e5;
+  border-color: transparent;
+}
+
+.eesel-navbtn-primary:hover {
+  background: #4338ca;
+}
+
+.eesel-navbtn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status {
+  box-sizing: border-box;
+  max-width: 36rem;
+  margin: auto;
+  padding: 1.5rem;
+  color: CanvasText;
+  text-align: center;
+}
+
+.status h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.status p {
+  margin: 0;
+  opacity: 0.8;
+}

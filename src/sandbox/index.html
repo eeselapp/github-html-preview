@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sandbox</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #artifact {
+        display: block;
+        border: 0;
+        width: 100%;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Sandbox renderer — kept as an INLINE classic script on purpose. This page
+      is loaded at an opaque origin under the manifest's lenient sandbox CSP
+      (`content_security_policy.sandbox`), where 'unsafe-inline' is allowed but
+      loading an external/CORS module from 'self' is fragile. The privileged
+      preview page posts the artifact HTML in; we render it in a NESTED frame
+      that is sandboxed WITHOUT allow-same-origin, so the artifact's inline
+      scripts run while it stays opaque-origin and can't read the GitHub session.
+      Message-type strings must match src/lib/messages.ts.
+    -->
+    <script>
+      (function () {
+        var READY = 'eesel-ghp:ready';
+        var RENDER = 'eesel-ghp:render';
+
+        function render(html) {
+          var old = document.getElementById('artifact');
+          if (old) old.remove();
+          var frame = document.createElement('iframe');
+          frame.id = 'artifact';
+          frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-modals allow-forms');
+          frame.srcdoc = html;
+          document.body.appendChild(frame);
+        }
+
+        window.addEventListener('message', function (event) {
+          if (event.source !== window.parent) return;
+          var data = event.data;
+          if (!data || data.type !== RENDER || typeof data.html !== 'string') return;
+          render(data.html);
+        });
+
+        // Tell the parent we're listening; it replies with the artifact HTML.
+        window.parent.postMessage({ type: READY }, '*');
+      })();
+    </script>
+  </body>
+</html>
