@@ -11,14 +11,11 @@ const MENU_ID = 'eesel-ghp-preview-link';
 // Only offer the menu on links that name an .html/.htm file, on the GitHub /
 // gist / raw content hosts. Match-pattern `*` spans path segments, so these
 // cover deep paths like /owner/repo/blob/main/dir/page.html.
-const LINK_PATTERNS = [
-  '*://github.com/*.html',
-  '*://github.com/*.htm',
-  '*://gist.github.com/*.html',
-  '*://gist.github.com/*.htm',
-  '*://*.githubusercontent.com/*.html',
-  '*://*.githubusercontent.com/*.htm',
-];
+const LINK_HOSTS = ['github.com', 'gist.github.com', '*.githubusercontent.com'];
+const HTML_EXTS = ['html', 'htm'];
+const LINK_PATTERNS = LINK_HOSTS.flatMap((host) =>
+  HTML_EXTS.map((ext) => `*://${host}/*.${ext}`)
+);
 
 // And only while the surrounding page is GitHub — i.e. where our content script
 // is present to receive the message.

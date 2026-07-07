@@ -1,4 +1,4 @@
-import { blobToRawUrl, isHtmlPath, isRawFileUrl } from '@/lib/github';
+import { blobToRawUrl, isAllowedPreviewSrc, isHtmlPath, isRawFileUrl } from '@/lib/github';
 import { CLOSE_MESSAGE, OPEN_PREVIEW_MESSAGE, SET_MODE_MESSAGE } from '@/lib/messages';
 import { PreviewController, type ControllerEnv } from './controller';
 
@@ -76,13 +76,13 @@ window.addEventListener('message', (event) => {
  * fetch, or null if it isn't a previewable HTML link. A raw link is used as-is;
  * a github.com/…/blob/… link converts to the raw route (which carries the
  * private-repo session on fetch). The context menu already filters to HTML
- * links, but we re-check the extension and origin defensively.
+ * links, but we re-check defensively and gate the result through the same
+ * `isAllowedPreviewSrc` guard the preview page enforces on its `?src=`.
  */
 function toPreviewableRawUrl(linkHref: string): string | null {
   if (!isHtmlPath(linkHref)) return null;
-  if (isRawFileUrl(linkHref)) return linkHref;
-  const raw = blobToRawUrl(linkHref);
-  return raw && isRawFileUrl(raw) ? raw : null;
+  const raw = isRawFileUrl(linkHref) ? linkHref : blobToRawUrl(linkHref);
+  return raw && isAllowedPreviewSrc(raw) ? raw : null;
 }
 
 // The background service worker relays the right-click "Preview HTML" action

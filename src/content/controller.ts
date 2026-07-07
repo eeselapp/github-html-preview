@@ -209,32 +209,29 @@ export class PreviewController {
     // An ad-hoc context-menu preview wins over the page's hash-driven one: show
     // the clicked link's file regardless of what this page is or its fragment.
     if (this.override) {
-      if (this.override.mode === 'fullscreen') {
-        this.removePanel();
-        this.ensureOverlay(this.override.rawUrl);
-      }
-      else {
-        this.removeOverlay();
-        this.ensurePanel(this.override.rawUrl);
-      }
-      return;
-    }
-
-    if (!this.target) {
-      this.removePanel();
-      this.removeOverlay();
+      this.showPreview(this.override.rawUrl, this.override.mode);
       return;
     }
 
     const mode = this.mode();
-    if (mode === 'inline') {
+    if (!this.target || mode === 'code') {
+      this.removePanel();
       this.removeOverlay();
-      this.ensurePanel(this.target.rawUrl);
+      return;
+    }
+    this.showPreview(this.target.rawUrl, mode);
+  }
+
+  /** Show exactly one preview surface for `rawUrl` — the inline panel or the
+   *  fullscreen overlay — tearing down the other. */
+  private showPreview(rawUrl: string, mode: 'inline' | 'fullscreen'): void {
+    if (mode === 'fullscreen') {
+      this.removePanel();
+      this.ensureOverlay(rawUrl);
     }
     else {
-      this.removePanel();
-      if (mode === 'fullscreen') this.ensureOverlay(this.target.rawUrl);
-      else this.removeOverlay();
+      this.removeOverlay();
+      this.ensurePanel(rawUrl);
     }
   }
 
