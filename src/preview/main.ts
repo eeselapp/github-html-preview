@@ -67,8 +67,10 @@ function navButton(label: string, iconPaths: string, onClick: () => void): HTMLB
 }
 
 /** Branded navbar: eesel logo + filename, plus buttons that ask the content
- *  script to exit fullscreen (back to the inline panel) or close the overlay. */
-function buildNavbar(filename: string): HTMLElement {
+ *  script to exit fullscreen (back to the inline panel) or close the overlay.
+ *  The logo is the monochrome mark for the resolved theme — black on the light
+ *  navbar, white on the dark one — so it always contrasts. */
+function buildNavbar(filename: string, theme: 'light' | 'dark'): HTMLElement {
   const nav = document.createElement('nav');
   nav.className = 'eesel-navbar';
 
@@ -76,7 +78,9 @@ function buildNavbar(filename: string): HTMLElement {
   brand.className = 'eesel-brand';
   const logo = document.createElement('img');
   logo.className = 'eesel-logo';
-  logo.src = chrome.runtime.getURL('public/logo.png');
+  logo.src = chrome.runtime.getURL(
+    theme === 'dark' ? 'public/white-logo.svg' : 'public/black-logo.svg'
+  );
   logo.alt = 'eesel';
   const titles = document.createElement('div');
   titles.className = 'eesel-titles';
@@ -134,6 +138,13 @@ function applyTheme(theme: string | null): void {
   document.documentElement.style.colorScheme = theme;
 }
 
+/** The effective light/dark theme: GitHub's, when passed as ?theme=, else the
+ *  OS preference. Used to pick the navbar's monochrome logo variant. */
+function resolveTheme(theme: string | null): 'light' | 'dark' {
+  if (theme === 'light' || theme === 'dark') return theme;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 async function main(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const src = params.get('src');
@@ -141,8 +152,11 @@ async function main(): Promise<void> {
   const filename = src ? urlFilename(src) : '';
   document.title = filename ? `Preview · ${filename}` : 'HTML Preview';
 
-  applyTheme(params.get('theme'));
-  if (mode === 'fullscreen') document.body.prepend(buildNavbar(filename));
+  const themeParam = params.get('theme');
+  applyTheme(themeParam);
+  if (mode === 'fullscreen') {
+    document.body.prepend(buildNavbar(filename, resolveTheme(themeParam)));
+  }
 
   const result = await loadArtifact(src);
   if (!result.ok) {
