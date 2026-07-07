@@ -334,6 +334,67 @@ describe('panel geometry persistence', () => {
   });
 });
 
+describe('ad-hoc context-menu preview (openPreview)', () => {
+  const TREE = 'https://github.com/o/r/tree/main/dir';
+  const OTHER = 'https://raw.githubusercontent.com/o/r/main/page.html';
+
+  it('opens an inline panel for an arbitrary raw URL, on a page with no target', () => {
+    const { controller, getHref } = setup('<div id="x"></div>', TREE);
+    controller.sync(); // a tree page has no HTML target
+    expect(present(PANEL)).toBe(false);
+
+    controller.openPreview(OTHER);
+    const frame = panelFrame();
+    expect(present(PANEL)).toBe(true);
+    expect(frame?.src).toContain(encodeURIComponent(OTHER));
+    expect(frame?.src).toContain('mode=inline');
+    // independent of the page URL — the fragment is left untouched
+    expect(getHref()).toBe(TREE);
+  });
+
+  it('survives a later sync() (SPA DOM mutation) — the panel stays open', () => {
+    const { controller } = setup('<div id="x"></div>', TREE);
+    controller.sync();
+    controller.openPreview(OTHER);
+    controller.sync();
+    expect(present(PANEL)).toBe(true);
+  });
+
+  it('Close dismisses the ad-hoc preview and leaves the URL untouched', () => {
+    const { controller, getHref } = setup('<div id="x"></div>', TREE);
+    controller.sync();
+    controller.openPreview(OTHER);
+    document
+      .querySelector<HTMLButtonElement>('#eesel-ghp-panel [data-eesel-action="close"]')
+      ?.click();
+    expect(present(PANEL)).toBe(false);
+    expect(getHref()).toBe(TREE);
+  });
+
+  it('overrides the page\'s own hash preview, then restores it on close', () => {
+    const { controller } = setup(); // x.html blob page
+    controller.sync();
+    click(BTN); // open x.html inline via the hash
+    expect(panelFrame()?.dataset.rawUrl).toBe('https://raw.githubusercontent.com/o/r/main/x.html');
+
+    controller.openPreview(OTHER); // context-menu another file
+    expect(panelFrame()?.dataset.rawUrl).toBe(OTHER);
+
+    controller.requestClose(); // dismiss ad-hoc → falls back to the hash preview
+    expect(present(PANEL)).toBe(true);
+    expect(panelFrame()?.dataset.rawUrl).toBe('https://raw.githubusercontent.com/o/r/main/x.html');
+  });
+
+  it('can expand the ad-hoc preview to the fullscreen overlay', () => {
+    const { controller } = setup('<div id="x"></div>', TREE);
+    controller.sync();
+    controller.openPreview(OTHER);
+    controller.requestMode('fullscreen');
+    expect(present(PANEL)).toBe(false);
+    expect(present(OVERLAY)).toBe(true);
+  });
+});
+
 describe('navigation teardown', () => {
   it('leaves no button or overlay after navigating to a non-HTML file', () => {
     const { controller, setHref } = setup();

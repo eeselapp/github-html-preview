@@ -71,6 +71,13 @@ export class PreviewController {
   private lastTargetRawUrl: string | null = null;
   /** Remembered panel geometry, so reopening/redrawing keeps where you left it. */
   private panelRect: Rect | null = null;
+  /**
+   * An ad-hoc preview requested from the right-click "Preview HTML" context menu.
+   * Unlike the hash-driven preview it is NOT tied to the page's own target or the
+   * URL fragment — it shows the clicked link's file "wherever we are" and takes
+   * precedence over the page target until dismissed with Close.
+   */
+  private override: { rawUrl: string; mode: 'inline' | 'fullscreen' } | null = null;
 
   constructor(private readonly env: ControllerEnv) {}
 
@@ -116,8 +123,25 @@ export class PreviewController {
     if (panel instanceof HTMLElement) this.applyRect(panel);
   }
 
+  /**
+   * Open an ad-hoc inline preview for a specific raw URL, from the right-click
+   * "Preview HTML" context menu. Works on any page (a file tree, a PR, a search
+   * result) and doesn't touch the URL fragment, so it renders in place wherever
+   * the user is. Dismissed with the panel's Close button.
+   */
+  openPreview(rawUrl: string): void {
+    this.override = { rawUrl, mode: 'inline' };
+    this.enforce();
+  }
+
   /** Close the overlay — called when its navbar's close button asks. */
   requestClose(): void {
+    // An ad-hoc context-menu preview isn't backed by the URL hash — just drop it.
+    if (this.override) {
+      this.override = null;
+      this.enforce();
+      return;
+    }
     if (this.isOpen()) {
       this.env.replaceHref(withoutPreviewHash(this.env.getHref()));
       this.enforce();
@@ -126,6 +150,12 @@ export class PreviewController {
 
   /** Switch an open preview between inline and fullscreen (navbar buttons ask). */
   requestMode(mode: 'inline' | 'fullscreen'): void {
+    // Ad-hoc preview: switch its own mode without touching the page URL/hash.
+    if (this.override) {
+      this.override.mode = mode;
+      this.enforce();
+      return;
+    }
     if (!this.target) return;
     const href = this.env.getHref();
     this.env.replaceHref(mode === 'fullscreen' ? withFullscreenHash(href) : withPreviewHash(href));
@@ -170,15 +200,31 @@ export class PreviewController {
     this.enforce();
   }
 
-  /** Make the live DOM match (target, hash) — idempotent. */
+  /** Make the live DOM match (target, hash, ad-hoc override) — idempotent. */
   private enforce(): void {
+    // The page's own "Preview" button only belongs on an HTML blob page.
+    if (this.target) this.ensureButton();
+    else this.removeButton();
+
+    // An ad-hoc context-menu preview wins over the page's hash-driven one: show
+    // the clicked link's file regardless of what this page is or its fragment.
+    if (this.override) {
+      if (this.override.mode === 'fullscreen') {
+        this.removePanel();
+        this.ensureOverlay(this.override.rawUrl);
+      }
+      else {
+        this.removeOverlay();
+        this.ensurePanel(this.override.rawUrl);
+      }
+      return;
+    }
+
     if (!this.target) {
-      this.removeButton();
       this.removePanel();
       this.removeOverlay();
       return;
     }
-    this.ensureButton();
 
     const mode = this.mode();
     if (mode === 'inline') {

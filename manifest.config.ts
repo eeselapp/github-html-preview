@@ -36,11 +36,18 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
+  // Registers the right-click "Preview HTML" context menu on HTML links and
+  // relays a click to the content script (chrome.tabs.sendMessage) so it can
+  // open an inline preview of that link in place.
+  background: {
+    service_worker: 'src/background/service-worker.ts',
+    type: 'module',
+  },
   // `storage` backs the one persisted preference: "always open the preview"
   // (chrome.storage.local), read+written by the content script and synced across
   // tabs via storage.onChanged. Still no `tabs`/`scripting` — the preview is an
   // injected iframe and the preview page fetches with the host grants below.
-  permissions: ['storage'],
+  permissions: ['storage', 'contextMenus'],
   // Minimal: github + the raw content hosts the file (and its signed-redirect
   // target) live on.
   host_permissions: [

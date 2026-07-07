@@ -10,6 +10,16 @@ export const CLOSE_MESSAGE = 'eesel-ghp:close';
 // content script, asking it to switch the preview between inline and fullscreen.
 export const SET_MODE_MESSAGE = 'eesel-ghp:set-mode';
 
+// Sent by the background service worker (chrome.runtime.sendMessage) down to the
+// content script when the user picks "Preview HTML" from the right-click context
+// menu on an HTML link. `url` is the clicked link's href (a blob or raw URL).
+export const OPEN_PREVIEW_MESSAGE = 'eesel-ghp:open-preview';
+
+export interface OpenPreviewMessage {
+  type: typeof OPEN_PREVIEW_MESSAGE;
+  url: string;
+}
+
 export interface RenderMessage {
   type: typeof RENDER_MESSAGE;
   html: string;

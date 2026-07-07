@@ -58,6 +58,12 @@ a floating panel that sets the `#htmlpreview` fragment. The panel:
   browsing artifacts shows them with no click. It opens once per file and never
   clobbers a `#L12` line anchor or a preview you just closed.
 
+You can also **right-click any `.html` link on GitHub → "Preview HTML"** — from a
+file tree, a PR's "Files changed" list, a Raw link, a gist — to open that file in
+the inline panel right where you are, without navigating to its blob page first.
+A background service worker registers the context menu (scoped to HTML links on
+GitHub) and relays the click to the content script.
+
 The URL fragment is the single source of truth, so the preview is reload-stable
 and **shareable** — a teammate opening `…/foo.html#htmlpreview` sees it rendered
 immediately, no click needed. Closing removes the fragment and leaves line
