@@ -58,6 +58,7 @@ function cacheArtifact(src: string, html: string): void {
 }
 
 function showStatus(title: string, detail: string): void {
+  hideLoading();
   const status = document.getElementById('status');
   if (!status) return;
   status.replaceChildren();
@@ -67,6 +68,11 @@ function showStatus(title: string, detail: string): void {
   p.textContent = detail;
   status.append(h, p);
   status.hidden = false;
+}
+
+function hideLoading(): void {
+  const loading = document.getElementById('loading');
+  if (loading instanceof HTMLElement) loading.hidden = true;
 }
 
 // Inline SVG icons (24×24, currentColor stroke) so they render identically in
@@ -155,14 +161,15 @@ function renderInSandbox(html: string): void {
   frame.title = 'Rendered HTML preview';
 
   // Wait for the sandbox page to announce it's ready, then post the HTML in
-  // (once) and drop the listener so its closure over `html` can be collected —
-  // `html` can be up to MAX_BYTES. The sandbox renders it in a further nested,
+  // (once) and drop the listener so its closure over `html` can be collected.
+  // The sandbox renders it in a further nested,
   // opaque-origin frame whose inline scripts run but which can't read the
   // GitHub session.
   const onReady = (event: MessageEvent) => {
     if (event.source === frame.contentWindow && event.data?.type === READY_MESSAGE) {
       frame.contentWindow?.postMessage({ type: RENDER_MESSAGE, html }, '*');
       window.removeEventListener('message', onReady);
+      hideLoading();
     }
   };
   window.addEventListener('message', onReady);
