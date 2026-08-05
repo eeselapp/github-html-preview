@@ -1,4 +1,10 @@
-import { blobToRawUrl, isAllowedPreviewSrc, isHtmlPath, isRawFileUrl } from '@/lib/github';
+import {
+  blobToRawUrl,
+  isAllowedPreviewSrc,
+  isHtmlPath,
+  isRawFileUrl,
+  parseBlobUrl,
+} from '@/lib/github';
 import {
   ARTIFACT_TITLE_MESSAGE,
   CACHE_GET_MESSAGE,
@@ -119,7 +125,7 @@ function toPreviewableRawUrl(linkHref: string): string | null {
 }
 
 // The background service worker relays the right-click "Preview HTML" action
-// here with the clicked link's URL. Open an ad-hoc inline preview for it.
+// here with the clicked link's URL. Open an ad-hoc floating preview for it.
 chrome.runtime?.onMessage?.addListener((message) => {
   if (message?.type === OPEN_PREVIEW_MESSAGE && typeof message.url === 'string') {
     const rawUrl = toPreviewableRawUrl(message.url);
@@ -129,6 +135,46 @@ chrome.runtime?.onMessage?.addListener((message) => {
     if (rawUrl) controller.openPreview(rawUrl, anchor);
   }
 });
+
+// With auto-open enabled, an ordinary HTML link click outside a direct blob
+// view becomes a floating preview instead of a navigation. On a blob page we
+// preserve GitHub's normal file-to-file navigation; sync() then opens the new
+// HTML destination inline. Modified/new-tab/download clicks retain their native
+// behavior in every context.
+window.addEventListener(
+  'click',
+  (event) => {
+    if (
+      !controller.isAutoOpenEnabled() ||
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      parseBlobUrl(location.href)
+    ) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const anchor = target.closest<HTMLAnchorElement>('a[href]');
+    if (
+      !anchor ||
+      anchor.hasAttribute('download') ||
+      (anchor.target && anchor.target !== '_self')
+    ) {
+      return;
+    }
+    const rawUrl = toPreviewableRawUrl(anchor.href);
+    if (!rawUrl) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    controller.openPreview(rawUrl, anchor, 'floating');
+  },
+  true
+);
 
 let pending = false;
 function scheduleSync(): void {

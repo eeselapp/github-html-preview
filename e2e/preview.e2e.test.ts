@@ -161,6 +161,37 @@ test('a #htmlpreview deep-link opens the preview panel on load with no click (sh
   await page.close();
 });
 
+test('auto-open turns an HTML link on a non-file page into a floating preview', async () => {
+  const page = await context.newPage();
+  await page.goto('https://github.com/h5bp/html5-boilerplate/blob/main/dist/index.html');
+  await page.locator('#eesel-ghp-preview-btn').click({ timeout: 20_000 });
+
+  const autoOpen = page.locator('#eesel-ghp-panel input[type="checkbox"]');
+  await autoOpen.check();
+  await page.locator('#eesel-ghp-panel button', { hasText: 'Close' }).click();
+
+  const treeUrl = 'https://github.com/h5bp/html5-boilerplate/tree/main/dist';
+  await page.goto(treeUrl);
+  const htmlLink = page.locator(
+    'a[href="/h5bp/html5-boilerplate/blob/main/dist/404.html"]:visible'
+  );
+  await htmlLink.waitFor({ state: 'visible', timeout: 20_000 });
+  expect(await htmlLink.count()).toBe(1);
+  await htmlLink.click();
+
+  const floatingPanel = page.locator('#eesel-ghp-panel');
+  await floatingPanel.waitFor({ state: 'visible', timeout: 10_000 });
+  expect(page.url()).toBe(treeUrl);
+  expect(await floatingPanel.getAttribute('data-eesel-presentation')).toBe('floating');
+  expect(await floatingPanel.evaluate((element) => getComputedStyle(element).position)).toBe(
+    'fixed'
+  );
+
+  await floatingPanel.locator('input[type="checkbox"]').uncheck();
+  await floatingPanel.locator('button', { hasText: 'Close' }).click();
+  await page.close();
+});
+
 test('adds NO Preview button on a non-HTML blob (.json)', async () => {
   const page = await context.newPage();
   await page.goto('https://github.com/h5bp/html5-boilerplate/blob/main/package.json');

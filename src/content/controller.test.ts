@@ -280,6 +280,13 @@ describe('requestClose', () => {
 });
 
 describe('always-open ("auto-open") preference', () => {
+  it('exposes whether ordinary HTML link clicks should auto-preview', () => {
+    const { controller } = setup();
+    expect(controller.isAutoOpenEnabled()).toBe(false);
+    controller.setAutoOpen(true, false);
+    expect(controller.isAutoOpenEnabled()).toBe(true);
+  });
+
   it('auto-opens the inline panel on a clean HTML page when enabled', () => {
     const { controller } = setup();
     controller.setAutoOpen(true, false); // seeded from storage; target not yet detected
@@ -419,12 +426,12 @@ describe('inline panel layout', () => {
     expect(document.getElementById('eesel-ghp-sidebar-scroll-spacer')).toBeNull();
   });
 
-  it('mounts a context-menu preview after the clicked link block when there is no code region', () => {
+  it('can mount an explicitly inline ad-hoc preview after the clicked link block', () => {
     const body = '<main><p id="link-row"><a id="artifact" href="https://github.com/o/r/blob/main/page.html">artifact</a></p></main>';
     const { controller } = setup(body, 'https://github.com/o/r/issues/1');
     controller.sync();
     const anchor = document.getElementById('artifact') as HTMLAnchorElement;
-    controller.openPreview('https://raw.githubusercontent.com/o/r/main/page.html', anchor);
+    controller.openPreview('https://raw.githubusercontent.com/o/r/main/page.html', anchor, 'inline');
     expect(document.getElementById('link-row')?.nextElementSibling?.id).toBe(PANEL);
   });
 });
@@ -433,7 +440,7 @@ describe('ad-hoc context-menu preview (openPreview)', () => {
   const TREE = 'https://github.com/o/r/tree/main/dir';
   const OTHER = 'https://raw.githubusercontent.com/o/r/main/page.html';
 
-  it('opens an inline panel for an arbitrary raw URL, on a page with no target', () => {
+  it('opens a floating panel for an arbitrary raw URL, on a page with no target', () => {
     const { controller, getHref } = setup('<div id="x"></div>', TREE);
     controller.sync(); // a tree page has no HTML target
     expect(present(PANEL)).toBe(false);
@@ -443,6 +450,9 @@ describe('ad-hoc context-menu preview (openPreview)', () => {
     expect(present(PANEL)).toBe(true);
     expect(frame?.src).toContain(encodeURIComponent(OTHER));
     expect(frame?.src).toContain('mode=inline');
+    expect(document.getElementById(PANEL)?.style.position).toBe('fixed');
+    expect(document.getElementById(PANEL)?.dataset.eeselPresentation).toBe('floating');
+    expect(present('eesel-ghp-floating-backdrop')).toBe(true);
     // independent of the page URL — the fragment is left untouched
     expect(getHref()).toBe(TREE);
   });
@@ -463,6 +473,7 @@ describe('ad-hoc context-menu preview (openPreview)', () => {
       .querySelector<HTMLButtonElement>('#eesel-ghp-panel [data-eesel-action="close"]')
       ?.click();
     expect(present(PANEL)).toBe(false);
+    expect(present('eesel-ghp-floating-backdrop')).toBe(false);
     expect(getHref()).toBe(TREE);
   });
 
@@ -474,10 +485,14 @@ describe('ad-hoc context-menu preview (openPreview)', () => {
 
     controller.openPreview(OTHER); // context-menu another file
     expect(panelFrame()?.dataset.rawUrl).toBe(OTHER);
+    expect(document.getElementById(PANEL)?.style.position).toBe('fixed');
+    expect((document.getElementById('blob-region') as HTMLElement).style.display).toBe('');
 
     controller.requestClose(); // dismiss ad-hoc → falls back to the hash preview
     expect(present(PANEL)).toBe(true);
     expect(panelFrame()?.dataset.rawUrl).toBe('https://raw.githubusercontent.com/o/r/main/x.html');
+    expect(document.getElementById(PANEL)?.style.position).toBe('relative');
+    expect((document.getElementById('blob-region') as HTMLElement).style.display).toBe('none');
   });
 
   it('can expand the ad-hoc preview to the fullscreen overlay', () => {
@@ -487,6 +502,7 @@ describe('ad-hoc context-menu preview (openPreview)', () => {
     controller.requestMode('fullscreen');
     expect(present(PANEL)).toBe(false);
     expect(present(OVERLAY)).toBe(true);
+    expect(present('eesel-ghp-floating-backdrop')).toBe(false);
   });
 });
 

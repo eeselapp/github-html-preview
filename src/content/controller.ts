@@ -14,6 +14,7 @@ const BTN_ID = 'eesel-ghp-preview-btn';
 const OVERLAY_ID = 'eesel-ghp-overlay';
 const PANEL_ID = 'eesel-ghp-panel';
 const PANEL_FRAME_ID = 'eesel-ghp-panel-frame';
+const FLOATING_BACKDROP_ID = 'eesel-ghp-floating-backdrop';
 const SIDEBAR_SPACER_ID = 'eesel-ghp-sidebar-scroll-spacer';
 
 // The inline panel reads as a GitHub surface in either theme by borrowing
@@ -50,6 +51,8 @@ interface ClampedLayoutState {
   element: HTMLElement;
   styles: Record<ClampedLayoutProperty, { value: string; priority: string }>;
 }
+
+type PanelPresentation = 'inline' | 'floating';
 
 /** Seam over the things the controller touches outside the document, so the
  *  state machine is testable without real navigation / chrome APIs. */
@@ -98,6 +101,7 @@ export class PreviewController {
     rawUrl: string;
     mode: 'inline' | 'fullscreen';
     anchor: HTMLAnchorElement | null;
+    presentation: PanelPresentation;
   } | null = null;
 
   constructor(private readonly env: ControllerEnv) {}
@@ -130,9 +134,18 @@ export class PreviewController {
    * result) and doesn't touch the URL fragment, so it renders in place wherever
    * the user is. Dismissed with the panel's Close button.
    */
-  openPreview(rawUrl: string, anchor: HTMLAnchorElement | null = null): void {
-    this.override = { rawUrl, mode: 'inline', anchor };
+  openPreview(
+    rawUrl: string,
+    anchor: HTMLAnchorElement | null = null,
+    presentation: PanelPresentation = 'floating'
+  ): void {
+    this.override = { rawUrl, mode: 'inline', anchor, presentation };
     this.enforce();
+  }
+
+  /** Whether ordinary HTML link clicks should be upgraded to previews. */
+  isAutoOpenEnabled(): boolean {
+    return this.autoOpen;
   }
 
   /** Close the overlay — called when its navbar's close button asks. */
@@ -225,7 +238,12 @@ export class PreviewController {
     // An ad-hoc context-menu preview wins over the page's hash-driven one: show
     // the clicked link's file regardless of what this page is or its fragment.
     if (this.override) {
-      this.showPreview(this.override.rawUrl, this.override.mode, this.override.anchor);
+      this.showPreview(
+        this.override.rawUrl,
+        this.override.mode,
+        this.override.anchor,
+        this.override.presentation
+      );
       return;
     }
 
@@ -236,6 +254,7 @@ export class PreviewController {
       this.restoreCodeRegion();
       this.restoreGitHubLayout();
       this.removeSidebarSpacer();
+      this.removeFloatingBackdrop();
       return;
     }
     this.showPreview(this.target.rawUrl, mode);
@@ -246,7 +265,8 @@ export class PreviewController {
   private showPreview(
     rawUrl: string,
     mode: 'inline' | 'fullscreen',
-    anchor: HTMLAnchorElement | null = null
+    anchor: HTMLAnchorElement | null = null,
+    presentation: PanelPresentation = 'inline'
   ): void {
     // GitHub's editor uses a very tall absolutely-positioned textarea to own
     // keyboard navigation and selection. A z-indexed iframe above it is not
@@ -259,9 +279,19 @@ export class PreviewController {
     const region = targetRegion?.isConnected
       ? targetRegion
       : (anchorRegion ?? findCodeRegion(this.env.doc, this.target?.rawAnchor));
-    this.hideCodeRegion(region);
-    this.clampGitHubLayout(region);
-    this.ensureSidebarSpacer(region);
+    if (presentation === 'floating') {
+      this.restoreCodeRegion();
+      this.restoreGitHubLayout();
+      this.removeSidebarSpacer();
+      if (mode === 'inline') this.ensureFloatingBackdrop();
+      else this.removeFloatingBackdrop();
+    }
+    else {
+      this.removeFloatingBackdrop();
+      this.hideCodeRegion(region);
+      this.clampGitHubLayout(region);
+      this.ensureSidebarSpacer(region);
+    }
 
     if (mode === 'fullscreen') {
       this.removePanel();
@@ -269,7 +299,7 @@ export class PreviewController {
     }
     else {
       this.removeOverlay();
-      this.ensurePanel(rawUrl, anchor);
+      this.ensurePanel(rawUrl, anchor, presentation);
     }
   }
 
@@ -308,7 +338,11 @@ export class PreviewController {
     }
   }
 
-  private ensurePanel(rawUrl: string, anchor: HTMLAnchorElement | null): void {
+  private ensurePanel(
+    rawUrl: string,
+    anchor: HTMLAnchorElement | null,
+    presentation: PanelPresentation
+  ): void {
     const { doc } = this.env;
     // Already open: don't rebuild (that would reset position/scroll), but DO
     // re-point the frame if navigation changed the file — otherwise an open
@@ -316,8 +350,12 @@ export class PreviewController {
     const existing = doc.getElementById(PANEL_ID);
     if (existing instanceof HTMLElement) {
       this.updateFrameSrc(PANEL_FRAME_ID, rawUrl, 'inline');
-      this.mountPanel(existing, anchor);
-      this.sizePanelToViewport(existing);
+      this.applyPanelPresentation(existing, presentation);
+      if (presentation === 'floating') this.mountFloatingPanel(existing);
+      else {
+        this.mountPanel(existing, anchor);
+        this.sizePanelToViewport(existing);
+      }
       return;
     }
 
@@ -325,14 +363,10 @@ export class PreviewController {
     panel.id = PANEL_ID;
     panel.setAttribute('aria-label', 'HTML preview panel');
     panel.style.cssText = [
-      'position:relative',
       'isolation:isolate',
       'box-sizing:border-box',
-      'width:100%',
       'min-width:0',
-      'max-width:100%',
       'display:flex',
-      'flex:1 1 auto',
       'flex-direction:column',
       'overflow:hidden',
       `border:1px solid ${C.border}`,
@@ -399,8 +433,12 @@ export class PreviewController {
 
     toolbar.append(icon, title, autoOpen, fullscreen, close);
     panel.append(toolbar, frame);
-    this.mountPanel(panel, anchor);
-    this.sizePanelToViewport(panel);
+    this.applyPanelPresentation(panel, presentation);
+    if (presentation === 'floating') this.mountFloatingPanel(panel);
+    else {
+      this.mountPanel(panel, anchor);
+      this.sizePanelToViewport(panel);
+    }
   }
 
   private buildAutoOpenToggle(): HTMLLabelElement {
@@ -457,6 +495,42 @@ export class PreviewController {
     const fallback = this.env.doc.querySelector<HTMLElement>('main, [role="main"]');
     const parent = fallback ?? this.env.doc.body;
     if (panel.parentElement !== parent || parent.firstChild !== panel) parent.prepend(panel);
+  }
+
+  private mountFloatingPanel(panel: HTMLElement): void {
+    if (panel.parentElement !== this.env.doc.body) this.env.doc.body.appendChild(panel);
+  }
+
+  private applyPanelPresentation(panel: HTMLElement, presentation: PanelPresentation): void {
+    panel.dataset.eeselPresentation = presentation;
+    if (presentation === 'floating') {
+      Object.assign(panel.style, {
+        position: 'fixed',
+        top: '72px',
+        right: '8px',
+        left: 'auto',
+        width: '760px',
+        maxWidth: 'calc(100vw - 16px)',
+        height: 'calc(100vh - 88px)',
+        flex: '0 0 auto',
+        zIndex: '2147483647',
+        boxShadow: '0 16px 48px rgba(31,35,40,0.28)',
+      });
+    }
+    else {
+      Object.assign(panel.style, {
+        position: 'relative',
+        top: '',
+        right: '',
+        left: '',
+        width: '100%',
+        maxWidth: '100%',
+        height: '',
+        flex: '1 1 auto',
+        zIndex: '',
+        boxShadow: '',
+      });
+    }
   }
 
   /** Fill only the viewport space below the panel's actual inline position.
@@ -595,6 +669,26 @@ export class PreviewController {
 
   private removeSidebarSpacer(): void {
     this.env.doc.getElementById(SIDEBAR_SPACER_ID)?.remove();
+  }
+
+  private ensureFloatingBackdrop(): void {
+    if (this.env.doc.getElementById(FLOATING_BACKDROP_ID)) return;
+    const backdrop = this.env.doc.createElement('div');
+    backdrop.id = FLOATING_BACKDROP_ID;
+    backdrop.setAttribute('aria-hidden', 'true');
+    backdrop.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:2147483646',
+      'background:rgba(0,0,0,0.16)',
+      'overscroll-behavior:none',
+    ].join(';');
+    backdrop.addEventListener('click', () => this.requestClose());
+    this.env.doc.body.appendChild(backdrop);
+  }
+
+  private removeFloatingBackdrop(): void {
+    this.env.doc.getElementById(FLOATING_BACKDROP_ID)?.remove();
   }
 
   private hideCodeRegion(region: HTMLElement | null): void {

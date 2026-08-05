@@ -59,14 +59,15 @@ an in-flow panel that sets the `#htmlpreview` fragment. The panel:
   full-page overlay (`#htmlpreview-fullscreen`); the overlay navbar's **Exit
   fullscreen** button drops it back to the panel.
 - **Can auto-open** — the toolbar's **Auto-open** checkbox is a persisted
-  preference (`chrome.storage.local`, synced across tabs). When on, the inline
-  preview opens automatically the first time you land on each HTML file, so
-  browsing artifacts shows them with no click. It opens once per file and never
-  clobbers a `#L12` line anchor or a preview you just closed.
+  preference (`chrome.storage.local`, synced across tabs). On a direct file view,
+  HTML destinations open inline after normal GitHub navigation. On trees, issues,
+  PRs, READMEs, and other non-file pages, an ordinary `.html` link click opens a
+  floating preview without navigating. Modified/new-tab/download clicks retain
+  their normal browser behavior.
 
 You can also **right-click any `.html` link on GitHub → "Preview HTML"** — from a
 file tree, a PR's "Files changed" list, a Raw link, a gist — to open that file in
-the inline panel right where you are, without navigating to its blob page first.
+the floating panel without navigating to its blob page first.
 A background service worker registers the context menu (scoped to HTML links on
 GitHub) and relays the click to the content script.
 
