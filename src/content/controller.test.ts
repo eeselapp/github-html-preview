@@ -41,7 +41,7 @@ function setup(
     },
     previewUrlFor: (raw, mode) =>
       `chrome-extension://abc/src/preview/index.html?src=${encodeURIComponent(raw)}&mode=${mode}`,
-    previewIconUrl: 'chrome-extension://abc/public/logo.png',
+    previewIconUrl: () => 'chrome-extension://abc/public/black-logo.svg',
     persistAutoOpen: (value) => {
       persisted.push(value);
     },
@@ -109,7 +109,8 @@ describe('Preview panel toggle', () => {
     expect(frame?.src).toContain(encodeURIComponent('https://raw.githubusercontent.com/o/r/main/x.html'));
     expect(frame?.src).toContain('mode=inline');
     expect(present(PANEL)).toBe(true);
-    expect(document.querySelector<HTMLImageElement>(`#${PANEL} img`)?.src).toContain('logo.png');
+    expect(document.querySelector<HTMLImageElement>(`#${PANEL} img`)?.src)
+      .toContain('black-logo.svg');
     expect(document.querySelector<HTMLElement>(`#${PANEL} [data-eesel-title]`)?.textContent)
       .toBe('x.html');
     expect(getHref()).toBe('https://github.com/o/r/blob/main/x.html#htmlpreview');

@@ -48,8 +48,8 @@ export interface ControllerEnv {
   getHash(): string;
   /** Build the preview-page URL that renders the given raw URL. */
   previewUrlFor(rawUrl: string, mode: 'inline' | 'fullscreen'): string;
-  /** Extension icon shown in the inline preview bar. */
-  previewIconUrl?: string;
+  /** Theme-matched extension logo shown in the inline preview bar. */
+  previewIconUrl?(): string;
   /** Persist the "always open the preview" preference (chrome.storage). Optional
    *  so tests can omit it; the content script wires it to chrome.storage.local. */
   persistAutoOpen?(value: boolean): void;
@@ -356,7 +356,7 @@ export class PreviewController {
     ].join(';');
 
     const icon = doc.createElement('img');
-    icon.src = this.env.previewIconUrl ?? '';
+    icon.src = this.env.previewIconUrl?.() ?? '';
     icon.alt = '';
     icon.style.cssText = 'width:18px;height:18px;border-radius:4px;flex:0 0 auto;';
 

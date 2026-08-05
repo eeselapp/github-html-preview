@@ -45,7 +45,10 @@ const env: ControllerEnv = {
   getHash: () => location.hash,
   previewUrlFor: (rawUrl, mode) =>
     `${chrome.runtime.getURL(PREVIEW_PAGE)}?src=${encodeURIComponent(rawUrl)}&mode=${mode}&theme=${resolveGitHubTheme()}`,
-  previewIconUrl: chrome.runtime.getURL('public/logo.png'),
+  previewIconUrl: () =>
+    chrome.runtime.getURL(
+      resolveGitHubTheme() === 'dark' ? 'public/white-logo.svg' : 'public/black-logo.svg'
+    ),
   persistAutoOpen: (value) => {
     void chrome.storage?.local?.set({ [AUTO_OPEN_KEY]: value });
   },

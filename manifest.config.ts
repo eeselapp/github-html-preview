@@ -66,7 +66,6 @@ export default defineManifest({
         'src/sandbox/index.html',
         'public/black-logo.svg',
         'public/white-logo.svg',
-        'public/logo.png',
       ],
       matches: ['https://github.com/*', 'https://gist.github.com/*'],
     },
