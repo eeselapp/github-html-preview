@@ -1,6 +1,9 @@
 import './style.css';
 import { urlFilename } from '@/lib/github';
 import {
+  CACHE_GET_MESSAGE,
+  CACHE_PUT_MESSAGE,
+  CACHE_RESULT_MESSAGE,
   CLOSE_MESSAGE,
   READY_MESSAGE,
   RENDER_MESSAGE,
@@ -15,6 +18,44 @@ import { loadArtifact } from './fetch-artifact';
 // to remove the overlay, revealing the GitHub page.
 
 const SANDBOX_PATH = 'src/sandbox/index.html';
+const CACHE_RESPONSE_TIMEOUT_MS = 50;
+
+/** Ask the embedding content script for this tab's last artifact. Standalone
+ * preview pages have no content-script parent, so fall through quickly. */
+function getCachedArtifact(src: string): Promise<string | null> {
+  if (window.parent === window) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (html: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      window.removeEventListener('message', onResult);
+      resolve(html);
+    };
+    const onResult = (event: MessageEvent) => {
+      const data = event.data;
+      if (
+        event.source === window.parent &&
+        data?.type === CACHE_RESULT_MESSAGE &&
+        data.src === src &&
+        (typeof data.html === 'string' || data.html === null)
+      ) {
+        finish(data.html);
+      }
+    };
+    const timer = window.setTimeout(() => finish(null), CACHE_RESPONSE_TIMEOUT_MS);
+    window.addEventListener('message', onResult);
+    window.parent.postMessage({ type: CACHE_GET_MESSAGE, src }, '*');
+  });
+}
+
+function cacheArtifact(src: string, html: string): void {
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: CACHE_PUT_MESSAGE, src, html }, '*');
+  }
+}
 
 function showStatus(title: string, detail: string): void {
   const status = document.getElementById('status');
@@ -158,11 +199,18 @@ async function main(): Promise<void> {
     document.body.prepend(buildNavbar(filename, resolveTheme(themeParam)));
   }
 
+  const cached = src ? await getCachedArtifact(src) : null;
+  if (cached !== null) {
+    renderInSandbox(cached);
+    return;
+  }
+
   const result = await loadArtifact(src);
   if (!result.ok) {
     showStatus(result.title, result.detail);
     return;
   }
+  if (src) cacheArtifact(src, result.html);
   renderInSandbox(result.html);
 }
 

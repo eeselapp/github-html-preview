@@ -10,6 +10,13 @@ export const CLOSE_MESSAGE = 'eesel-ghp:close';
 // content script, asking it to switch the preview between inline and fullscreen.
 export const SET_MODE_MESSAGE = 'eesel-ghp:set-mode';
 
+// The content script owns a single-entry, tab-scoped HTML cache. Preview
+// iframes are replaced when switching inline/fullscreen, so they ask the
+// content script for cached HTML and publish newly fetched HTML back to it.
+export const CACHE_GET_MESSAGE = 'eesel-ghp:cache-get';
+export const CACHE_RESULT_MESSAGE = 'eesel-ghp:cache-result';
+export const CACHE_PUT_MESSAGE = 'eesel-ghp:cache-put';
+
 // Sent by the background service worker (chrome.runtime.sendMessage) down to the
 // content script when the user picks "Preview HTML" from the right-click context
 // menu on an HTML link. `url` is the clicked link's href (a blob or raw URL).
@@ -28,4 +35,21 @@ export interface RenderMessage {
 export interface SetModeMessage {
   type: typeof SET_MODE_MESSAGE;
   mode: 'inline' | 'fullscreen';
+}
+
+export interface CacheGetMessage {
+  type: typeof CACHE_GET_MESSAGE;
+  src: string;
+}
+
+export interface CacheResultMessage {
+  type: typeof CACHE_RESULT_MESSAGE;
+  src: string;
+  html: string | null;
+}
+
+export interface CachePutMessage {
+  type: typeof CACHE_PUT_MESSAGE;
+  src: string;
+  html: string;
 }

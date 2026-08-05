@@ -1,5 +1,12 @@
 import { blobToRawUrl, isAllowedPreviewSrc, isHtmlPath, isRawFileUrl } from '@/lib/github';
-import { CLOSE_MESSAGE, OPEN_PREVIEW_MESSAGE, SET_MODE_MESSAGE } from '@/lib/messages';
+import {
+  CACHE_GET_MESSAGE,
+  CACHE_PUT_MESSAGE,
+  CACHE_RESULT_MESSAGE,
+  CLOSE_MESSAGE,
+  OPEN_PREVIEW_MESSAGE,
+  SET_MODE_MESSAGE,
+} from '@/lib/messages';
 import { PreviewController, type ControllerEnv } from './controller';
 
 // Content script for github.com / gist.github.com. It owns nothing on the page
@@ -10,6 +17,11 @@ const PREVIEW_PAGE = 'src/preview/index.html';
 const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
 const AUTO_OPEN_KEY = 'autoOpenPreview';
 const PANEL_RECT_KEY = 'panelRect';
+
+// Content scripts have one isolated JS world per browser tab. Keeping only the
+// latest artifact here lets inline/fullscreen iframe replacements reuse it
+// without persisting HTML or allowing the cache to grow without bound.
+let cachedArtifact: { src: string; html: string } | null = null;
 
 /**
  * GitHub's currently-shown light/dark theme. We pass it to the preview page so
@@ -68,6 +80,21 @@ window.addEventListener('message', (event) => {
   }
   else if (data?.type === SET_MODE_MESSAGE && (data.mode === 'inline' || data.mode === 'fullscreen')) {
     controller.requestMode(data.mode);
+  }
+  else if (data?.type === CACHE_GET_MESSAGE && typeof data.src === 'string') {
+    const cached = cachedArtifact;
+    const html = cached && cached.src === data.src ? cached.html : null;
+    (event.source as WindowProxy | null)?.postMessage(
+      { type: CACHE_RESULT_MESSAGE, src: data.src, html },
+      { targetOrigin: EXTENSION_ORIGIN }
+    );
+  }
+  else if (
+    data?.type === CACHE_PUT_MESSAGE &&
+    typeof data.src === 'string' &&
+    typeof data.html === 'string'
+  ) {
+    cachedArtifact = { src: data.src, html: data.html };
   }
 });
 
