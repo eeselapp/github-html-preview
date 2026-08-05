@@ -6,7 +6,7 @@ import pkg from './package.json';
 // Two extension pages do the work:
 //   - src/preview/index.html  — PRIVILEGED page. Has host_permissions + chrome
 //     APIs, so it can fetch the raw file WITH the user's session (private repos
-//     resolve). It does the fetch, size cap and error UI, then hands the text to
+//     resolve). It does the fetch and error UI, then hands the text to
 //     the sandbox page. Listed in web_accessible_resources so the content script
 //     can inject it as a chrome-extension:// fullscreen overlay iframe into
 //     github.com pages.

@@ -1,26 +1,10 @@
 import { isAllowedPreviewSrc } from '@/lib/github';
 
-export const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const FETCH_TIMEOUT_MS = 20_000;
 
 export type ArtifactResult =
   | { ok: true; html: string }
   | { ok: false; title: string; detail: string };
-
-const MB = MAX_BYTES / 1024 / 1024;
-
-function byteLength(text: string): number {
-  return new TextEncoder().encode(text).length;
-}
-
-function tooLarge(bytes: number): ArtifactResult {
-  const mb = (bytes / 1024 / 1024).toFixed(1);
-  return {
-    ok: false,
-    title: 'File too large to preview',
-    detail: `This file is about ${mb} MB — over the ${MB} MB preview limit. Open it locally instead.`,
-  };
-}
 
 // GitHub raw hosts serve HTML files as text/plain, which we render — so we only
 // reject content types that clearly aren't a web page (a binary the .html name
@@ -36,9 +20,8 @@ function looksBinary(contentType: string): boolean {
 /**
  * Fetch a raw GitHub file for preview, with resilience baked in: reject
  * disallowed sources, time out a stalled request, surface fetch/HTTP failures
- * and non-HTML content types as a message, and cap at MAX_BYTES (Content-Length
- * first, then the body) so a giant file shows a warning instead of hanging the
- * tab. Pure apart from the injected fetch — unit-tested with a stub.
+ * and non-HTML content types as a message. Pure apart from the injected fetch —
+ * unit-tested with a stub.
  */
 export async function loadArtifact(
   src: string | null,
@@ -86,16 +69,6 @@ export async function loadArtifact(
     };
   }
 
-  const declared = Number(res.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > MAX_BYTES) {
-    return tooLarge(declared);
-  }
-
   const text = await res.text();
-  const actual = byteLength(text);
-  if (actual > MAX_BYTES) {
-    return tooLarge(actual);
-  }
-
   return { ok: true, html: text };
 }

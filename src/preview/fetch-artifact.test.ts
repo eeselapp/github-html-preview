@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadArtifact, MAX_BYTES } from './fetch-artifact';
+import { loadArtifact } from './fetch-artifact';
 
 const SRC = 'https://github.com/o/r/raw/main/x.html';
 
@@ -57,17 +57,10 @@ describe('loadArtifact', () => {
     if (!r.ok) expect(r.detail).toMatch(/404/);
   });
 
-  it('warns from Content-Length without reading a huge body', async () => {
-    const headers = { 'content-length': String(MAX_BYTES + 1) };
-    const r = await loadArtifact(SRC, stubFetch(new Response('x', { status: 200, headers })));
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.title).toMatch(/too large/i);
-  });
-
-  it('warns when the body itself exceeds the cap (no Content-Length)', async () => {
-    const body = 'a'.repeat(MAX_BYTES + 10);
-    const r = await loadArtifact(SRC, stubFetch(new Response(body, { status: 200 })));
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.title).toMatch(/too large/i);
+  it('returns large HTML regardless of Content-Length', async () => {
+    const body = 'a'.repeat(5 * 1024 * 1024 + 10);
+    const headers = { 'content-length': String(body.length) };
+    const r = await loadArtifact(SRC, stubFetch(new Response(body, { status: 200, headers })));
+    expect(r).toEqual({ ok: true, html: body });
   });
 });
