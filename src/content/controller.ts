@@ -14,6 +14,7 @@ const BTN_ID = 'eesel-ghp-preview-btn';
 const OVERLAY_ID = 'eesel-ghp-overlay';
 const PANEL_ID = 'eesel-ghp-panel';
 const PANEL_FRAME_ID = 'eesel-ghp-panel-frame';
+const SIDEBAR_SPACER_ID = 'eesel-ghp-sidebar-scroll-spacer';
 
 // The inline panel reads as a GitHub surface in either theme by borrowing
 // Primer's CSS variables (new `--bgColor-*` names, older `--color-*` names as a
@@ -33,6 +34,21 @@ interface HiddenRegionState {
   displayPriority: string;
   ariaHidden: string | null;
   inert: boolean;
+}
+
+const CLAMPED_LAYOUT_PROPERTIES = [
+  'height',
+  'max-height',
+  'min-height',
+  'overflow',
+  'overflow-x',
+  'overflow-y',
+] as const;
+type ClampedLayoutProperty = (typeof CLAMPED_LAYOUT_PROPERTIES)[number];
+
+interface ClampedLayoutState {
+  element: HTMLElement;
+  styles: Record<ClampedLayoutProperty, { value: string; priority: string }>;
 }
 
 /** Seam over the things the controller touches outside the document, so the
@@ -70,6 +86,8 @@ export class PreviewController {
   private lastTargetRawUrl: string | null = null;
   /** GitHub's code/blame surface currently removed from layout and hit-testing. */
   private hiddenRegion: HiddenRegionState | null = null;
+  /** GitHub's split-pane shell while its sidebar is prevented from growing the page. */
+  private clampedLayouts: ClampedLayoutState[] = [];
   /**
    * An ad-hoc preview requested from the right-click "Preview HTML" context menu.
    * Unlike the hash-driven preview it is NOT tied to the page's own target or the
@@ -216,6 +234,8 @@ export class PreviewController {
       this.removePanel();
       this.removeOverlay();
       this.restoreCodeRegion();
+      this.restoreGitHubLayout();
+      this.removeSidebarSpacer();
       return;
     }
     this.showPreview(this.target.rawUrl, mode);
@@ -240,6 +260,8 @@ export class PreviewController {
       ? targetRegion
       : (anchorRegion ?? findCodeRegion(this.env.doc, this.target?.rawAnchor));
     this.hideCodeRegion(region);
+    this.clampGitHubLayout(region);
+    this.ensureSidebarSpacer(region);
 
     if (mode === 'fullscreen') {
       this.removePanel();
@@ -444,6 +466,135 @@ export class PreviewController {
     const top = Math.max(0, Math.round(panel.getBoundingClientRect().top));
     const height = `calc(100vh - ${top}px)`;
     if (panel.style.height !== height) panel.style.height = height;
+  }
+
+  /** GitHub's repository file tree shares a split-pane shell with the blob.
+   * A deeply selected sidebar item can give that shell a huge intrinsic height,
+   * so clamp the shell to the remaining viewport while preview UI is active. */
+  private clampGitHubLayout(region: HTMLElement | null): void {
+    const splitPane = region?.closest<HTMLElement>('#repos-split-pane-content') ?? null;
+    if (!splitPane?.isConnected) {
+      this.restoreGitHubLayout();
+      return;
+    }
+
+    const targets = [this.env.doc.documentElement, this.env.doc.body, splitPane];
+    for (const state of [...this.clampedLayouts]) {
+      if (!targets.includes(state.element)) this.restoreClampedLayout(state);
+    }
+
+    for (const element of targets) {
+      let state = this.clampedLayouts.find((candidate) => candidate.element === element);
+      if (!state) {
+        state = {
+          element,
+          styles: Object.fromEntries(
+            CLAMPED_LAYOUT_PROPERTIES.map((property) => [
+              property,
+              {
+                value: element.style.getPropertyValue(property),
+                priority: element.style.getPropertyPriority(property),
+              },
+            ])
+          ) as ClampedLayoutState['styles'],
+        };
+        this.clampedLayouts.push(state);
+      }
+
+      const top = element === splitPane
+        ? Math.max(0, Math.round(element.getBoundingClientRect().top))
+        : 0;
+      const height = top ? `calc(100vh - ${top}px)` : '100vh';
+      const desired: Record<ClampedLayoutProperty, string> = {
+        height,
+        'max-height': height,
+        'min-height': '0',
+        overflow: 'hidden',
+        'overflow-x': 'hidden',
+        'overflow-y': 'hidden',
+      };
+      for (const property of CLAMPED_LAYOUT_PROPERTIES) {
+        if (
+          element.style.getPropertyValue(property) !== desired[property] ||
+          element.style.getPropertyPriority(property) !== 'important'
+        ) {
+          element.style.setProperty(property, desired[property], 'important');
+        }
+      }
+    }
+  }
+
+  private restoreGitHubLayout(): void {
+    for (const state of [...this.clampedLayouts]) this.restoreClampedLayout(state);
+  }
+
+  private restoreClampedLayout(state: ClampedLayoutState): void {
+    this.clampedLayouts = this.clampedLayouts.filter((candidate) => candidate !== state);
+    for (const property of CLAMPED_LAYOUT_PROPERTIES) {
+      const original = state.styles[property];
+      if (original.value) {
+        state.element.style.setProperty(property, original.value, original.priority);
+      }
+      else {
+        state.element.style.removeProperty(property);
+      }
+    }
+  }
+
+  /** Give GitHub's independently-scrollable file tree some breathing room at
+   * the bottom while the outer document is locked to the viewport. */
+  private ensureSidebarSpacer(region: HTMLElement | null): void {
+    const splitPane = region?.closest<HTMLElement>('#repos-split-pane-content');
+    if (!splitPane) {
+      this.removeSidebarSpacer();
+      return;
+    }
+
+    const marker =
+      splitPane.querySelector<HTMLElement>('[role="tree"]') ??
+      splitPane.querySelector<HTMLElement>('[data-testid*="file-tree" i]') ??
+      splitPane.querySelector<HTMLElement>('[aria-label="Files"]') ??
+      splitPane.querySelector<HTMLElement>('[class*="FileTree"], [class*="TreeView"]');
+    if (!marker || region?.contains(marker)) {
+      this.removeSidebarSpacer();
+      return;
+    }
+
+    let scrollOwner: HTMLElement = marker;
+    for (
+      let current: HTMLElement | null = marker;
+      current && current !== splitPane;
+      current = current.parentElement
+    ) {
+      const overflowY = this.env.doc.defaultView?.getComputedStyle(current).overflowY ?? '';
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        scrollOwner = current;
+        break;
+      }
+    }
+
+    let spacer = this.env.doc.getElementById(SIDEBAR_SPACER_ID);
+    if (!(spacer instanceof HTMLElement)) {
+      spacer = this.env.doc.createElement('div');
+      spacer.id = SIDEBAR_SPACER_ID;
+      spacer.setAttribute('aria-hidden', 'true');
+      spacer.setAttribute('role', 'presentation');
+      spacer.style.cssText = [
+        'display:block',
+        'width:1px',
+        'height:100vh',
+        'min-height:100vh',
+        'flex:0 0 100vh',
+        'pointer-events:none',
+      ].join(';');
+    }
+    if (spacer.parentElement !== scrollOwner || scrollOwner.lastElementChild !== spacer) {
+      scrollOwner.appendChild(spacer);
+    }
+  }
+
+  private removeSidebarSpacer(): void {
+    this.env.doc.getElementById(SIDEBAR_SPACER_ID)?.remove();
   }
 
   private hideCodeRegion(region: HTMLElement | null): void {

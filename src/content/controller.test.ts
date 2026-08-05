@@ -370,6 +370,55 @@ describe('inline panel layout', () => {
     expect(panel.style.height).toBe('calc(100vh - 0px)');
   });
 
+  it('clamps the GitHub split pane so a tall sidebar cannot grow the document', () => {
+    const { controller } = setup(`
+      <div id="repos-split-pane-content"
+           style="height:auto;max-height:none;min-height:12px;overflow:visible">
+        <aside id="file-tree-scroll" style="height:5000px;overflow-y:auto">
+          <div role="tree"><div role="treeitem">Files</div></div>
+        </aside>
+        <div class="container BlobViewContent-module__blobContainer__DtH2d">
+          <a id="raw" href="https://raw.githubusercontent.com/o/r/main/x.html">Raw</a>
+          <div class="CodeBlob-module__codeBlobWrapper__RS6In">
+            <textarea data-testid="read-only-cursor-text-area" aria-label="file content"></textarea>
+            <div data-testid="code-cell">code</div>
+          </div>
+        </div>
+      </div>`);
+    controller.sync();
+    click(BTN);
+
+    const layout = document.getElementById('repos-split-pane-content') as HTMLElement;
+    expect(layout.style.getPropertyValue('height')).toBe('100vh');
+    expect(layout.style.getPropertyValue('max-height')).toBe('100vh');
+    expect(layout.style.getPropertyValue('min-height')).toBe('0');
+    expect(layout.style.getPropertyValue('overflow')).toBe('hidden');
+    expect(layout.style.getPropertyPriority('height')).toBe('important');
+    const spacer = document.getElementById('eesel-ghp-sidebar-scroll-spacer');
+    expect(spacer?.parentElement?.id).toBe('file-tree-scroll');
+    expect(spacer?.style.height).toBe('100vh');
+    for (const root of [document.documentElement, document.body]) {
+      expect(root.style.getPropertyValue('height')).toBe('100vh');
+      expect(root.style.getPropertyValue('max-height')).toBe('100vh');
+      expect(root.style.getPropertyValue('overflow-x')).toBe('hidden');
+      expect(root.style.getPropertyValue('overflow-y')).toBe('hidden');
+      expect(root.style.getPropertyPriority('overflow-y')).toBe('important');
+    }
+
+    document
+      .querySelector<HTMLButtonElement>(`#${PANEL} [data-eesel-action="close"]`)
+      ?.click();
+    expect(layout.style.height).toBe('auto');
+    expect(layout.style.maxHeight).toBe('none');
+    expect(layout.style.minHeight).toBe('12px');
+    expect(layout.style.overflow).toBe('visible');
+    expect(document.documentElement.style.height).toBe('');
+    expect(document.documentElement.style.overflow).toBe('');
+    expect(document.body.style.height).toBe('');
+    expect(document.body.style.overflow).toBe('');
+    expect(document.getElementById('eesel-ghp-sidebar-scroll-spacer')).toBeNull();
+  });
+
   it('mounts a context-menu preview after the clicked link block when there is no code region', () => {
     const body = '<main><p id="link-row"><a id="artifact" href="https://github.com/o/r/blob/main/page.html">artifact</a></p></main>';
     const { controller } = setup(body, 'https://github.com/o/r/issues/1');

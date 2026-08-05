@@ -88,6 +88,10 @@ test('Preview replaces the code surface inline and renders the file', async () =
 
   const previewBtn = page.locator('#eesel-ghp-preview-btn');
   await previewBtn.waitFor({ timeout: 20_000 });
+  const splitPane = page.locator('#repos-split-pane-content');
+  const originalSplitPaneOverflow = await splitPane.evaluate(
+    (element) => getComputedStyle(element).overflow
+  );
   await previewBtn.click();
 
   const panel = page.locator('#eesel-ghp-panel');
@@ -99,6 +103,13 @@ test('Preview replaces the code surface inline and renders the file', async () =
   const codeRegion = page.locator('div[class*="codeBlobWrapper"]');
   expect(await fileSurface.isVisible()).toBe(false);
   expect(await codeRegion.isVisible()).toBe(false);
+  expect(await splitPane.evaluate((element) => getComputedStyle(element).overflow)).toBe('hidden');
+  expect(
+    await page.locator('html').evaluate((element) => getComputedStyle(element).overflow)
+  ).toBe('hidden');
+  expect(
+    await page.locator('body').evaluate((element) => getComputedStyle(element).overflow)
+  ).toBe('hidden');
   const panelLayout = await panel.evaluate((element) => ({
     position: getComputedStyle(element).position,
     top: element.getBoundingClientRect().top,
@@ -135,6 +146,9 @@ test('Preview replaces the code surface inline and renders the file', async () =
   await panel.waitFor({ state: 'detached', timeout: 10_000 });
   expect(await fileSurface.isVisible()).toBe(true);
   expect(await codeRegion.isVisible()).toBe(true);
+  expect(await splitPane.evaluate((element) => getComputedStyle(element).overflow)).toBe(
+    originalSplitPaneOverflow
+  );
   expect(page.url()).not.toContain('#htmlpreview');
   await page.close();
 });

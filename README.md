@@ -45,7 +45,11 @@ an in-flow panel that sets the `#htmlpreview` fragment. The panel:
   including GitHub's Code/Blame/Raw strip, with a preview that fills the remaining
   viewport in normal document flow. GitHub's hidden navigation textarea is
   removed from layout and hit-testing, so selection and wheel input belong to
-  the artifact.
+  the artifact. While open, the document roots and repository split pane are
+  clamped to the viewport with outer scrolling disabled, so a tall file-tree
+  item cannot create page overflow. A temporary viewport-height bottom spacer
+  keeps the final file-tree entries reachable in its own scrollbar; all injected
+  layout state is removed and the original styles are restored on close.
 - **Handles oversized artifacts** — when GitHub omits the code body because a
   file is too large to display, the Raw control still anchors the replacement
   and the extension downloads and renders the complete HTML without a size cap.
