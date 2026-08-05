@@ -14,20 +14,26 @@ const releaseName = name.replace(/^@/, '').replace(/\//g, '-');
 // INLINE script (allowed by 'unsafe-inline'). But Vite injects a `type="module"`
 // entry <script> into every HTML entry, and module scripts are ALWAYS fetched
 // in CORS mode — which fails from the sandbox page's null origin. This plugin
-// strips those injected module/preload tags from the sandbox page only, leaving
-// the inline script to do the work. (The privileged preview page is a normal
-// extension page and keeps its bundled module.)
-function stripSandboxModuleScripts(): Plugin {
+// strips those injected module tags from the sandbox page, leaving the inline
+// script to do the work. It also removes modulepreload links from extension
+// pages because Chrome rejects them across the content-script boundary; the
+// normal module imports still load the same chunks when needed.
+function cleanExtensionHtml(): Plugin {
   const isSandbox = (id: string) => id.includes('sandbox');
   return {
-    name: 'eesel-strip-sandbox-module-scripts',
+    name: 'eesel-clean-extension-html',
     transformIndexHtml: {
       order: 'post',
       handler(html, ctx) {
-        if (!isSandbox(ctx.path) && !isSandbox(ctx.filename)) return html;
-        return html
-          .replace(/\s*<script\b[^>]*\btype="module"[^>]*><\/script>/g, '')
-          .replace(/\s*<link\b[^>]*\brel="modulepreload"[^>]*>/g, '');
+        const withoutPreloads = html.replace(
+          /\s*<link\b[^>]*\brel="modulepreload"[^>]*>/g,
+          ''
+        );
+        if (!isSandbox(ctx.path) && !isSandbox(ctx.filename)) return withoutPreloads;
+        return withoutPreloads.replace(
+          /\s*<script\b[^>]*\btype="module"[^>]*><\/script>/g,
+          ''
+        );
       },
     },
   };
@@ -52,7 +58,7 @@ export default defineConfig({
   },
   plugins: [
     crx({ manifest }),
-    stripSandboxModuleScripts(),
+    cleanExtensionHtml(),
     zip({ outDir: 'release', outFileName: `crx-${releaseName}-${version}.zip` }),
   ],
   server: {
