@@ -17,7 +17,6 @@ import { PreviewController, type ControllerEnv } from './controller';
 const PREVIEW_PAGE = 'src/preview/index.html';
 const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
 const AUTO_OPEN_KEY = 'autoOpenPreview';
-const PANEL_RECT_KEY = 'panelRect';
 
 // Content scripts have one isolated JS world per browser tab. Keeping only the
 // latest artifact here lets inline/fullscreen iframe replacements reuse it
@@ -52,20 +51,15 @@ const env: ControllerEnv = {
   persistAutoOpen: (value) => {
     void chrome.storage?.local?.set({ [AUTO_OPEN_KEY]: value });
   },
-  persistRect: (rect) => {
-    void chrome.storage?.local?.set({ [PANEL_RECT_KEY]: rect });
-  },
 };
 
 const controller = new PreviewController(env);
 
-// Seed the persisted preferences — the remembered panel geometry and the
-// "always open the preview" toggle — then keep the toggle in sync across tabs
-// (storage.onChanged) so flipping it in one tab follows you.
+// Seed the "always open the preview" preference, then keep it in sync across
+// tabs (storage.onChanged) so flipping it in one tab follows you.
 chrome.storage?.local
-  ?.get([AUTO_OPEN_KEY, PANEL_RECT_KEY])
+  ?.get(AUTO_OPEN_KEY)
   .then((stored) => {
-    controller.restorePanelRect(stored?.[PANEL_RECT_KEY] ?? null);
     controller.setAutoOpen(Boolean(stored?.[AUTO_OPEN_KEY]), false);
   })
   .catch(() => {});
@@ -129,7 +123,10 @@ function toPreviewableRawUrl(linkHref: string): string | null {
 chrome.runtime?.onMessage?.addListener((message) => {
   if (message?.type === OPEN_PREVIEW_MESSAGE && typeof message.url === 'string') {
     const rawUrl = toPreviewableRawUrl(message.url);
-    if (rawUrl) controller.openPreview(rawUrl);
+    const anchor = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).find(
+      (candidate) => candidate.href === message.url
+    ) ?? null;
+    if (rawUrl) controller.openPreview(rawUrl, anchor);
   }
 });
 

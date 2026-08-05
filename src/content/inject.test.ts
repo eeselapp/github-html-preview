@@ -61,6 +61,54 @@ describe('detectPrimaryTarget', () => {
 });
 
 describe('findCodeRegion', () => {
+  it('returns the whole file surface so the default Code/Blame/Raw strip is replaced', () => {
+    const doc = docWith(`
+      <div id="surface" class="container BlobViewContent-module__blobContainer__DtH2d">
+        <div class="BlobViewHeader-module__Box__yhm9u">
+          <a id="raw" href="https://github.com/o/r/raw/main/x.html">Raw</a>
+        </div>
+        <div class="CodeBlob-module__codeBlobWrapper__RS6In">
+          <textarea data-testid="read-only-cursor-text-area" aria-label="file content"></textarea>
+          <div data-testid="code-cell">code</div>
+        </div>
+      </div>`);
+    const raw = doc.getElementById('raw') as HTMLAnchorElement;
+
+    expect(findCodeRegion(doc, raw)?.id).toBe('surface');
+  });
+
+  it('finds an oversized file surface from Raw when GitHub renders no code body', () => {
+    const doc = docWith(`
+      <div id="surface" class="container BlobViewContent-module__blobContainer__DtH2d">
+        <a id="raw" href="https://github.com/o/r/raw/main/large.html">Raw</a>
+        <div>Sorry about that, but we can’t show files that are this big right now.</div>
+      </div>`);
+    const raw = doc.getElementById('raw') as HTMLAnchorElement;
+
+    expect(findCodeRegion(doc, raw)?.id).toBe('surface');
+  });
+
+  it('detects GitHub\'s current code wrapper and absolute navigation textarea', () => {
+    const doc = docWith(`
+      <div id="wrapper" class="CodeBlob-module__codeBlobWrapper__RS6In">
+        <div class="CodeBlob-module__cursorContainer__tiLPm">
+          <textarea data-testid="read-only-cursor-text-area" aria-label="file content"></textarea>
+        </div>
+        <div data-testid="code-cell">code</div>
+      </div>`);
+
+    expect(findCodeRegion(doc)?.id).toBe('wrapper');
+  });
+
+  it('detects a blame code wrapper from its code cells', () => {
+    const doc = docWith(`
+      <div id="blame" class="CodeBlob-module__codeBlobWrapper__RS6In">
+        <div class="Blame-module__codeLine__fhKEj" data-testid="code-cell">code</div>
+      </div>`);
+
+    expect(findCodeRegion(doc)?.id).toBe('blame');
+  });
+
   it('returns the smallest ancestor containing both code lines and GitHub cursor textarea', () => {
     const doc = docWith(`
       <main id="too-high">

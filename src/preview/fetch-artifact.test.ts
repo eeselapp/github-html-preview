@@ -57,8 +57,8 @@ describe('loadArtifact', () => {
     if (!r.ok) expect(r.detail).toMatch(/404/);
   });
 
-  it('returns large HTML regardless of Content-Length', async () => {
-    const body = 'a'.repeat(5 * 1024 * 1024 + 10);
+  it('returns a GitHub-too-large-sized HTML file regardless of Content-Length', async () => {
+    const body = 'a'.repeat(13 * 1024 * 1024);
     const headers = { 'content-length': String(body.length) };
     const r = await loadArtifact(SRC, stubFetch(new Response(body, { status: 200, headers })));
     expect(r).toEqual({ ok: true, html: body });

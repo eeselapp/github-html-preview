@@ -16,6 +16,8 @@ html,
 body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -40,6 +42,7 @@ body {
   width: 100%;
   min-height: 0;
   background: #fff;
+  overscroll-behavior: contain;
 }
 
 .loading {

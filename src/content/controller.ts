@@ -6,7 +6,7 @@ import {
 } from '@/lib/preview-state';
 import { urlFilename } from '@/lib/github';
 import { shortTitle } from '@/lib/html-title';
-import { detectPrimaryTarget, type PreviewTarget } from './inject';
+import { detectPrimaryTarget, findCodeRegion, type PreviewTarget } from './inject';
 
 // IDs for what we inject, so we can find and tear down our own elements
 // idempotently across GitHub's SPA re-renders.
@@ -15,7 +15,7 @@ const OVERLAY_ID = 'eesel-ghp-overlay';
 const PANEL_ID = 'eesel-ghp-panel';
 const PANEL_FRAME_ID = 'eesel-ghp-panel-frame';
 
-// The floating panel reads as a GitHub surface in either theme by borrowing
+// The inline panel reads as a GitHub surface in either theme by borrowing
 // Primer's CSS variables (new `--bgColor-*` names, older `--color-*` names as a
 // fallback, literal as a last resort) — it lives in the GitHub page, so these
 // cascade in and re-resolve when the user flips GitHub's light/dark theme.
@@ -27,15 +27,12 @@ const C = {
   border: 'var(--borderColor-default, var(--color-border-default, #d0d7de))',
 };
 
-const MIN_W = 320;
-const MIN_H = 240;
-const EDGE = 8; // keep this much of the panel on-screen when dragging/resizing
-
-interface Rect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
+interface HiddenRegionState {
+  element: HTMLElement;
+  display: string;
+  displayPriority: string;
+  ariaHidden: string | null;
+  inert: boolean;
 }
 
 /** Seam over the things the controller touches outside the document, so the
@@ -53,14 +50,12 @@ export interface ControllerEnv {
   /** Persist the "always open the preview" preference (chrome.storage). Optional
    *  so tests can omit it; the content script wires it to chrome.storage.local. */
   persistAutoOpen?(value: boolean): void;
-  /** Persist the panel's last position+size so it survives reloads/new tabs. */
-  persistRect?(rect: Rect): void;
 }
 
 /**
  * Owns the preview UI on a single GitHub file page. The URL fragment is the
- * single source of truth: `#htmlpreview` opens a draggable, resizable, theme-
- * matched preview panel; `#htmlpreview-fullscreen` shows the fullscreen overlay;
+ * single source of truth: `#htmlpreview` replaces the GitHub code surface with
+ * a theme-matched preview panel; `#htmlpreview-fullscreen` shows the fullscreen overlay;
  * anything else shows GitHub's normal code view.
  *
  * `sync()` is idempotent and is the only entry point navigation/mutation
@@ -73,15 +68,19 @@ export class PreviewController {
   private autoOpen = false;
   /** The raw URL we last saw, to fire auto-open once per new file (not per sync). */
   private lastTargetRawUrl: string | null = null;
-  /** Remembered panel geometry, so reopening/redrawing keeps where you left it. */
-  private panelRect: Rect | null = null;
+  /** GitHub's code/blame surface currently removed from layout and hit-testing. */
+  private hiddenRegion: HiddenRegionState | null = null;
   /**
    * An ad-hoc preview requested from the right-click "Preview HTML" context menu.
    * Unlike the hash-driven preview it is NOT tied to the page's own target or the
    * URL fragment — it shows the clicked link's file "wherever we are" and takes
    * precedence over the page target until dismissed with Close.
    */
-  private override: { rawUrl: string; mode: 'inline' | 'fullscreen' } | null = null;
+  private override: {
+    rawUrl: string;
+    mode: 'inline' | 'fullscreen';
+    anchor: HTMLAnchorElement | null;
+  } | null = null;
 
   constructor(private readonly env: ControllerEnv) {}
 
@@ -107,34 +106,14 @@ export class PreviewController {
     this.enforce();
   }
 
-  /** Seed the remembered panel geometry from storage (unknown/untrusted shape),
-   *  clamped to the current viewport so a rect saved on a bigger screen — or a
-   *  corrupt value — can't land the panel off-screen. */
-  restorePanelRect(rect: unknown): void {
-    if (!isRect(rect)) return;
-    const view = this.env.doc.defaultView;
-    const vw = view?.innerWidth ?? 1024;
-    const vh = view?.innerHeight ?? 768;
-    const width = clamp(rect.width, MIN_W, vw - 2 * EDGE);
-    const height = clamp(rect.height, MIN_H, vh - 2 * EDGE);
-    this.panelRect = {
-      width,
-      height,
-      left: clamp(rect.left, EDGE, vw - width - EDGE),
-      top: clamp(rect.top, EDGE, vh - height - EDGE),
-    };
-    const panel = this.env.doc.getElementById(PANEL_ID);
-    if (panel instanceof HTMLElement) this.applyRect(panel);
-  }
-
   /**
    * Open an ad-hoc inline preview for a specific raw URL, from the right-click
    * "Preview HTML" context menu. Works on any page (a file tree, a PR, a search
    * result) and doesn't touch the URL fragment, so it renders in place wherever
    * the user is. Dismissed with the panel's Close button.
    */
-  openPreview(rawUrl: string): void {
-    this.override = { rawUrl, mode: 'inline' };
+  openPreview(rawUrl: string, anchor: HTMLAnchorElement | null = null): void {
+    this.override = { rawUrl, mode: 'inline', anchor };
     this.enforce();
   }
 
@@ -228,7 +207,7 @@ export class PreviewController {
     // An ad-hoc context-menu preview wins over the page's hash-driven one: show
     // the clicked link's file regardless of what this page is or its fragment.
     if (this.override) {
-      this.showPreview(this.override.rawUrl, this.override.mode);
+      this.showPreview(this.override.rawUrl, this.override.mode, this.override.anchor);
       return;
     }
 
@@ -236,6 +215,7 @@ export class PreviewController {
     if (!this.target || mode === 'code') {
       this.removePanel();
       this.removeOverlay();
+      this.restoreCodeRegion();
       return;
     }
     this.showPreview(this.target.rawUrl, mode);
@@ -243,14 +223,31 @@ export class PreviewController {
 
   /** Show exactly one preview surface for `rawUrl` — the inline panel or the
    *  fullscreen overlay — tearing down the other. */
-  private showPreview(rawUrl: string, mode: 'inline' | 'fullscreen'): void {
+  private showPreview(
+    rawUrl: string,
+    mode: 'inline' | 'fullscreen',
+    anchor: HTMLAnchorElement | null = null
+  ): void {
+    // GitHub's editor uses a very tall absolutely-positioned textarea to own
+    // keyboard navigation and selection. A z-indexed iframe above it is not
+    // enough to reliably isolate wheel and pointer input, so remove the entire
+    // bounded code/blame surface from layout and hit-testing while previewing.
+    const targetRegion = this.target?.codeRegion;
+    const anchorRegion = anchor?.closest<HTMLElement>(
+      'div[class*="codeBlobWrapper"], section[class*="blobContentSection"], .react-blob-view-container'
+    );
+    const region = targetRegion?.isConnected
+      ? targetRegion
+      : (anchorRegion ?? findCodeRegion(this.env.doc, this.target?.rawAnchor));
+    this.hideCodeRegion(region);
+
     if (mode === 'fullscreen') {
       this.removePanel();
       this.ensureOverlay(rawUrl);
     }
     else {
       this.removeOverlay();
-      this.ensurePanel(rawUrl);
+      this.ensurePanel(rawUrl, anchor);
     }
   }
 
@@ -279,24 +276,6 @@ export class PreviewController {
     this.env.doc.getElementById(BTN_ID)?.remove();
   }
 
-  /** Default panel geometry: a tall column pinned to the top-right margin. */
-  private defaultRect(): Rect {
-    const vw = this.env.doc.defaultView?.innerWidth ?? 1024;
-    const vh = this.env.doc.defaultView?.innerHeight ?? 768;
-    const width = Math.min(760, Math.max(MIN_W, vw - 2 * EDGE));
-    const height = Math.max(MIN_H, vh - 88);
-    return { left: Math.max(EDGE, vw - width - EDGE), top: 72, width, height };
-  }
-
-  private applyRect(panel: HTMLElement): void {
-    const r = this.panelRect;
-    if (!r) return;
-    panel.style.left = `${r.left}px`;
-    panel.style.top = `${r.top}px`;
-    panel.style.width = `${r.width}px`;
-    panel.style.height = `${r.height}px`;
-  }
-
   /** Re-point an already-open preview frame at a new file when navigation
    *  changes the target, instead of leaving it showing the previous artifact. */
   private updateFrameSrc(frameId: string, rawUrl: string, mode: 'inline' | 'fullscreen'): void {
@@ -307,34 +286,35 @@ export class PreviewController {
     }
   }
 
-  private ensurePanel(rawUrl: string): void {
+  private ensurePanel(rawUrl: string, anchor: HTMLAnchorElement | null): void {
     const { doc } = this.env;
     // Already open: don't rebuild (that would reset position/scroll), but DO
     // re-point the frame if navigation changed the file — otherwise an open
     // panel keeps showing the previous artifact (the auto-open "stale content").
-    if (doc.getElementById(PANEL_ID)) {
+    const existing = doc.getElementById(PANEL_ID);
+    if (existing instanceof HTMLElement) {
       this.updateFrameSrc(PANEL_FRAME_ID, rawUrl, 'inline');
+      this.mountPanel(existing, anchor);
+      this.sizePanelToViewport(existing);
       return;
     }
-
-    const rect = (this.panelRect ??= this.defaultRect());
 
     const panel = doc.createElement('section');
     panel.id = PANEL_ID;
     panel.setAttribute('aria-label', 'HTML preview panel');
     panel.style.cssText = [
-      'position:fixed',
-      `left:${rect.left}px`,
-      `top:${rect.top}px`,
-      `width:${rect.width}px`,
-      `height:${rect.height}px`,
-      'z-index:2147483647',
+      'position:relative',
+      'isolation:isolate',
+      'box-sizing:border-box',
+      'width:100%',
+      'min-width:0',
+      'max-width:100%',
       'display:flex',
+      'flex:1 1 auto',
       'flex-direction:column',
       'overflow:hidden',
       `border:1px solid ${C.border}`,
       'border-radius:8px',
-      'box-shadow:0 16px 48px rgba(31,35,40,0.28)',
       `background:${C.bg}`,
       `color:${C.fg}`,
       'font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif',
@@ -350,7 +330,6 @@ export class PreviewController {
       `border-bottom:1px solid ${C.border}`,
       `background:${C.bgMuted}`,
       `color:${C.fg}`,
-      'cursor:move',
       'user-select:none',
       'flex:0 0 auto',
     ].join(';');
@@ -394,28 +373,12 @@ export class PreviewController {
     frame.title = 'HTML preview';
     frame.dataset.rawUrl = rawUrl;
     frame.src = this.env.previewUrlFor(rawUrl, 'inline');
-    frame.style.cssText = `display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:${C.bg};`;
-
-    const grip = doc.createElement('div');
-    grip.setAttribute('aria-hidden', 'true');
-    grip.style.cssText = [
-      'position:absolute',
-      'right:0',
-      'bottom:0',
-      'width:16px',
-      'height:16px',
-      'cursor:nwse-resize',
-      // a small corner chevron drawn from the panel's foreground colour
-      `background:linear-gradient(135deg,transparent 0 50%,${C.fgMuted} 50% 60%,transparent 60% 70%,${C.fgMuted} 70% 80%,transparent 80%)`,
-      'opacity:0.6',
-    ].join(';');
+    frame.style.cssText = `display:block;flex:1 1 auto;width:100%;min-width:0;max-width:100%;min-height:0;border:0;background:${C.bg};`;
 
     toolbar.append(icon, title, autoOpen, fullscreen, close);
-    panel.append(toolbar, frame, grip);
-    doc.body.appendChild(panel);
-
-    this.wireDrag(toolbar, panel, frame, rect, 'move');
-    this.wireDrag(grip, panel, frame, rect, 'resize');
+    panel.append(toolbar, frame);
+    this.mountPanel(panel, anchor);
+    this.sizePanelToViewport(panel);
   }
 
   private buildAutoOpenToggle(): HTMLLabelElement {
@@ -446,64 +409,73 @@ export class PreviewController {
     return label;
   }
 
-  /**
-   * Pointer-drag a panel by its `toolbar` (move) or `grip` (resize). We disable
-   * the iframe's pointer events for the gesture's duration so it can't swallow
-   * the cross-origin pointermove stream, and listen on the document (not via
-   * setPointerCapture, which jsdom lacks) so the gesture survives the cursor
-   * crossing the iframe. Geometry is clamped to keep the panel grabbable.
-   */
-  private wireDrag(
-    handle: HTMLElement,
-    panel: HTMLElement,
-    frame: HTMLElement,
-    rect: Rect,
-    kind: 'move' | 'resize'
-  ): void {
-    const { doc } = this.env;
-    const view = doc.defaultView;
-    if (!view) return;
+  /** Mount the panel in normal document flow. On a blob/blame page it takes the
+   * exact place of the hidden code region. For a context-menu preview elsewhere,
+   * it appears immediately after the clicked link's containing block. */
+  private mountPanel(panel: HTMLElement, anchor: HTMLAnchorElement | null): void {
+    const region = this.hiddenRegion?.element;
+    if (region?.isConnected && region.parentElement) {
+      if (panel.parentElement !== region.parentElement || panel.nextSibling !== region) {
+        region.parentElement.insertBefore(panel, region);
+      }
+      return;
+    }
 
-    handle.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      // Let the toolbar's own controls (buttons, the auto-open checkbox) work.
-      if (kind === 'move' && (e.target as HTMLElement).closest('button, label, input')) return;
-      e.preventDefault();
-
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const origin = { ...rect };
-      frame.style.pointerEvents = 'none';
-      doc.documentElement.style.cursor = kind === 'move' ? 'grabbing' : 'nwse-resize';
-
-      const onMove = (ev: PointerEvent) => {
-        const dx = ev.clientX - startX;
-        const dy = ev.clientY - startY;
-        if (kind === 'move') {
-          rect.left = clamp(origin.left + dx, EDGE, view.innerWidth - rect.width - EDGE);
-          rect.top = clamp(origin.top + dy, EDGE, view.innerHeight - rect.height - EDGE);
-          panel.style.left = `${rect.left}px`;
-          panel.style.top = `${rect.top}px`;
+    if (anchor?.isConnected) {
+      const block = anchor.closest<HTMLElement>('p, li, blockquote, details, td, section');
+      const reference = block ?? anchor;
+      if (reference.parentElement) {
+        if (panel.parentElement !== reference.parentElement || reference.nextSibling !== panel) {
+          reference.parentElement.insertBefore(panel, reference.nextSibling);
         }
-        else {
-          rect.width = clamp(origin.width + dx, MIN_W, view.innerWidth - rect.left - EDGE);
-          rect.height = clamp(origin.height + dy, MIN_H, view.innerHeight - rect.top - EDGE);
-          panel.style.width = `${rect.width}px`;
-          panel.style.height = `${rect.height}px`;
-        }
-      };
-      const onUp = () => {
-        frame.style.pointerEvents = '';
-        doc.documentElement.style.cursor = '';
-        doc.removeEventListener('pointermove', onMove);
-        doc.removeEventListener('pointerup', onUp);
-        doc.removeEventListener('pointercancel', onUp);
-        this.env.persistRect?.({ ...rect });
-      };
-      doc.addEventListener('pointermove', onMove);
-      doc.addEventListener('pointerup', onUp);
-      doc.addEventListener('pointercancel', onUp);
-    });
+        return;
+      }
+    }
+
+    const fallback = this.env.doc.querySelector<HTMLElement>('main, [role="main"]');
+    const parent = fallback ?? this.env.doc.body;
+    if (panel.parentElement !== parent || parent.firstChild !== panel) parent.prepend(panel);
+  }
+
+  /** Fill only the viewport space below the panel's actual inline position.
+   * `vh` remains responsive as the window changes size; the measured offset is
+   * refreshed by the controller's normal GitHub mutation syncs. */
+  private sizePanelToViewport(panel: HTMLElement): void {
+    const top = Math.max(0, Math.round(panel.getBoundingClientRect().top));
+    const height = `calc(100vh - ${top}px)`;
+    if (panel.style.height !== height) panel.style.height = height;
+  }
+
+  private hideCodeRegion(region: HTMLElement | null): void {
+    if (this.hiddenRegion?.element === region) return;
+    this.restoreCodeRegion();
+    if (!region?.isConnected) return;
+
+    this.hiddenRegion = {
+      element: region,
+      display: region.style.getPropertyValue('display'),
+      displayPriority: region.style.getPropertyPriority('display'),
+      ariaHidden: region.getAttribute('aria-hidden'),
+      inert: Boolean(region.inert),
+    };
+    region.dataset.eeselGhpHidden = '';
+    region.setAttribute('aria-hidden', 'true');
+    region.inert = true;
+    region.style.setProperty('display', 'none', 'important');
+  }
+
+  private restoreCodeRegion(): void {
+    const state = this.hiddenRegion;
+    if (!state) return;
+    this.hiddenRegion = null;
+
+    const { element } = state;
+    element.style.setProperty('display', state.display, state.displayPriority);
+    if (!state.display) element.style.removeProperty('display');
+    if (state.ariaHidden === null) element.removeAttribute('aria-hidden');
+    else element.setAttribute('aria-hidden', state.ariaHidden);
+    element.inert = state.inert;
+    delete element.dataset.eeselGhpHidden;
   }
 
   private removePanel(): void {
@@ -528,16 +500,4 @@ export class PreviewController {
   private removeOverlay(): void {
     this.env.doc.getElementById(OVERLAY_ID)?.remove();
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), Math.max(min, max));
-}
-
-function isRect(value: unknown): value is Rect {
-  if (typeof value !== 'object' || value === null) return false;
-  const r = value as Record<string, unknown>;
-  return (['left', 'top', 'width', 'height'] as const).every(
-    (k) => typeof r[k] === 'number' && Number.isFinite(r[k])
-  );
 }

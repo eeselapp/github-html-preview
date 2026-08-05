@@ -89,22 +89,51 @@ export function findCodeRegion(
   doc: Document,
   rawAnchor: HTMLAnchorElement | null = null
 ): HTMLElement | null {
-  const lines = doc.querySelector<HTMLElement>('[data-testid="code-lines-container"]');
+  const lines = doc.querySelector<HTMLElement>(
+    '[data-testid="code-lines-container"], [data-testid="code-cell"]'
+  );
   const cursorTextArea = doc.querySelector<HTMLElement>(
-    'textarea[aria-label="File contents"], .read-only-cursor-text-area'
+    [
+      'textarea[data-testid="read-only-cursor-text-area"]',
+      'textarea[aria-label="File contents"]',
+      'textarea[aria-label="file content"]',
+      '.read-only-cursor-text-area',
+    ].join(', ')
   );
 
+  // Prefer the whole file surface when GitHub exposes it. It contains the
+  // Code/Blame/Raw strip as well as either the code body or the "too large to
+  // display" placeholder, so the preview replaces GitHub's chrome instead of
+  // stacking another toolbar beneath it. The Raw anchor is the only reliable
+  // marker on oversized files, where GitHub renders no code cells at all.
+  const fileSurfaceMarker = lines ?? cursorTextArea ?? rawAnchor;
+  const fileSurface = fileSurfaceMarker?.closest<HTMLElement>(
+    'div[class*="blobContainer"]'
+  );
+  if (fileSurface && fileSurface !== doc.body && fileSurface !== doc.documentElement) {
+    return fileSurface;
+  }
+
   const boundedCandidates = doc.querySelectorAll<HTMLElement>(
-    '[data-testid="code-content"], [data-testid="blob-code-content"], .react-blob-view-container'
+    [
+      '[data-testid="code-content"]',
+      '[data-testid="blob-code-content"]',
+      '.react-blob-view-container',
+      'div[class*="codeBlobWrapper"]',
+    ].join(', ')
   );
   for (const candidate of boundedCandidates) {
     if (rawAnchor && candidate.contains(rawAnchor)) continue;
-    if (!lines || candidate.contains(lines)) {
+    if (
+      (!lines && !cursorTextArea) ||
+      (lines && candidate.contains(lines)) ||
+      (cursorTextArea && candidate.contains(cursorTextArea))
+    ) {
       if (!cursorTextArea || candidate.contains(cursorTextArea)) return candidate;
     }
   }
 
-  const currentBlobRegion = lines?.closest<HTMLElement>(
+  const currentBlobRegion = (lines ?? cursorTextArea)?.closest<HTMLElement>(
     'section[class*="blobContentSection"], div[class*="blobContentWrapper"], div[class*="codeBlobWrapper"]'
   );
   if (currentBlobRegion && (!rawAnchor || !currentBlobRegion.contains(rawAnchor))) {

@@ -11,9 +11,9 @@ const HTML_PAGE = `
     <a id="raw" href="https://raw.githubusercontent.com/o/r/main/x.html">Raw</a>
     <a id="blame" href="https://github.com/o/r/blame/main/x.html">Blame</a>
   </div>
-  <div id="blob-region">
+  <div id="blob-region" class="CodeBlob-module__codeBlobWrapper__RS6In">
     <div data-testid="code-lines-container">CODE GOES HERE</div>
-    <textarea aria-label="File contents" class="read-only-cursor-text-area"></textarea>
+    <textarea data-testid="read-only-cursor-text-area" aria-label="file content"></textarea>
   </div>
 `;
 
@@ -24,7 +24,6 @@ function setup(
   document.body.innerHTML = body;
   let href = startHref;
   const persisted: boolean[] = [];
-  const persistedRects: { left: number; top: number; width: number; height: number }[] = [];
   const env: ControllerEnv = {
     doc: document,
     getHref: () => href,
@@ -45,15 +44,11 @@ function setup(
     persistAutoOpen: (value) => {
       persisted.push(value);
     },
-    persistRect: (rect) => {
-      persistedRects.push(rect);
-    },
   };
   const controller = new PreviewController(env);
   return {
     controller,
     persisted,
-    persistedRects,
     getHref: () => href,
     setHref: (h: string) => {
       href = h;
@@ -98,7 +93,7 @@ describe('button injection', () => {
 });
 
 describe('Preview panel toggle', () => {
-  it('opening adds a right-aligned preview panel and appends #htmlpreview', () => {
+  it('opening adds an inline preview panel and appends #htmlpreview', () => {
     const { controller, getHref } = setup();
     controller.sync();
     click(BTN);
@@ -127,13 +122,40 @@ describe('Preview panel toggle', () => {
     expect(title?.title).toBe(fullTitle);
   });
 
-  it('does not hide GitHub code DOM', () => {
+  it('replaces GitHub code in normal flow so its textarea cannot receive input', () => {
     const { controller } = setup();
     controller.sync();
     click(BTN);
     const region = document.getElementById('blob-region') as HTMLElement;
-    expect(region.style.display).toBe('');
-    expect(region.getAttribute('data-eesel-ghp-hidden')).toBeNull();
+    const panel = document.getElementById(PANEL) as HTMLElement;
+    expect(region.style.getPropertyValue('display')).toBe('none');
+    expect(region.style.getPropertyPriority('display')).toBe('important');
+    expect(region.inert).toBe(true);
+    expect(region.getAttribute('aria-hidden')).toBe('true');
+    expect(region.getAttribute('data-eesel-ghp-hidden')).not.toBeNull();
+    expect(panel.style.position).toBe('relative');
+    expect(panel.nextElementSibling).toBe(region);
+  });
+
+  it('replaces the whole file surface, including GitHub\'s default control strip', () => {
+    const { controller } = setup(`
+      <div id="surface" class="container BlobViewContent-module__blobContainer__DtH2d">
+        <div id="github-strip">
+          <a id="raw" href="https://raw.githubusercontent.com/o/r/main/x.html">Raw</a>
+        </div>
+        <div class="CodeBlob-module__codeBlobWrapper__RS6In">
+          <textarea data-testid="read-only-cursor-text-area" aria-label="file content"></textarea>
+          <div data-testid="code-cell">code</div>
+        </div>
+      </div>`);
+    controller.sync();
+    click(BTN);
+
+    const surface = document.getElementById('surface') as HTMLElement;
+    const panel = document.getElementById(PANEL) as HTMLElement;
+    expect(surface.style.display).toBe('none');
+    expect(panel.nextElementSibling).toBe(surface);
+    expect(panel.style.height).toBe('calc(100vh - 0px)');
   });
 
   it('toggling again removes the preview panel and removes #htmlpreview', () => {
@@ -142,7 +164,28 @@ describe('Preview panel toggle', () => {
     click(BTN); // open
     click(BTN); // close
     expect(present(PANEL)).toBe(false);
+    const region = document.getElementById('blob-region') as HTMLElement;
+    expect(region.style.display).toBe('');
+    expect(region.inert).toBe(false);
+    expect(region.getAttribute('aria-hidden')).toBeNull();
     expect(getHref()).toBe('https://github.com/o/r/blob/main/x.html');
+  });
+
+  it('does not reinsert or reload an already-mounted iframe during sync', async () => {
+    const { controller } = setup();
+    controller.sync();
+    click(BTN);
+    const frame = panelFrame();
+    const mutations: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => mutations.push(...records));
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    controller.sync();
+    await Promise.resolve();
+
+    observer.disconnect();
+    expect(panelFrame()).toBe(frame);
+    expect(mutations).toEqual([]);
   });
 
   it('still opens the panel when there is no detectable code region', () => {
@@ -179,6 +222,7 @@ describe('fullscreen toggle', () => {
 
     expect(present(PANEL)).toBe(false);
     expect(present(OVERLAY)).toBe(true);
+    expect((document.getElementById('blob-region') as HTMLElement).style.display).toBe('none');
     expect(getHref()).toBe('https://github.com/o/r/blob/main/x.html#htmlpreview-fullscreen');
   });
 
@@ -314,39 +358,25 @@ describe('open panel content refresh', () => {
   });
 });
 
-describe('panel geometry persistence', () => {
-  it('applies remembered geometry to the panel', () => {
+describe('inline panel layout', () => {
+  it('uses responsive viewport sizing instead of the code editor height', () => {
     const { controller } = setup();
-    controller.restorePanelRect({ left: 120, top: 60, width: 500, height: 360 });
     controller.sync();
     click(BTN);
     const panel = document.getElementById(PANEL) as HTMLElement;
-    expect(panel.style.left).toBe('120px');
-    expect(panel.style.top).toBe('60px');
-    expect(panel.style.width).toBe('500px');
-    expect(panel.style.height).toBe('360px');
+    expect(panel.style.width).toBe('100%');
+    expect(panel.style.minWidth).toBe('0');
+    expect(panel.style.maxWidth).toBe('100%');
+    expect(panel.style.height).toBe('calc(100vh - 0px)');
   });
 
-  it('clamps a restored rect that would land off-screen (jsdom viewport 1024×768)', () => {
-    const { controller } = setup();
-    controller.restorePanelRect({ left: 99999, top: 99999, width: 99999, height: 99999 });
+  it('mounts a context-menu preview after the clicked link block when there is no code region', () => {
+    const body = '<main><p id="link-row"><a id="artifact" href="https://github.com/o/r/blob/main/page.html">artifact</a></p></main>';
+    const { controller } = setup(body, 'https://github.com/o/r/issues/1');
     controller.sync();
-    click(BTN);
-    const panel = document.getElementById(PANEL) as HTMLElement;
-    expect(panel.style.width).toBe('1008px'); // 1024 - 2*8
-    expect(panel.style.height).toBe('752px'); // 768 - 2*8
-    expect(panel.style.left).toBe('8px');
-    expect(panel.style.top).toBe('8px');
-  });
-
-  it('repositions an already-open panel when geometry is restored late (storage echo)', () => {
-    const { controller } = setup();
-    controller.sync();
-    click(BTN); // panel already open at default geometry
-    controller.restorePanelRect({ left: 200, top: 100, width: 420, height: 320 });
-    const panel = document.getElementById(PANEL) as HTMLElement;
-    expect(panel.style.left).toBe('200px');
-    expect(panel.style.width).toBe('420px');
+    const anchor = document.getElementById('artifact') as HTMLAnchorElement;
+    controller.openPreview('https://raw.githubusercontent.com/o/r/main/page.html', anchor);
+    expect(document.getElementById('link-row')?.nextElementSibling?.id).toBe(PANEL);
   });
 });
 

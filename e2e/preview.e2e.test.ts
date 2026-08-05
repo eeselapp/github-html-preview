@@ -82,7 +82,7 @@ test('preview page shows a clear message for a disallowed src (not an open fetch
 
 // --- content script on real github.com (validates the live selectors) --------
 
-test('Preview opens a dismissable right-aligned panel and renders the file', async () => {
+test('Preview replaces the code surface inline and renders the file', async () => {
   const page = await context.newPage();
   await page.goto('https://github.com/h5bp/html5-boilerplate/blob/main/dist/index.html');
 
@@ -95,7 +95,18 @@ test('Preview opens a dismissable right-aligned panel and renders the file', asy
   await panelFrame.waitFor({ timeout: 10_000 });
   expect(page.url()).toContain('#htmlpreview'); // shareable
 
-  expect(await page.locator('[data-testid="code-lines-container"]').isVisible()).toBe(true);
+  const fileSurface = page.locator('div[class*="blobContainer"]');
+  const codeRegion = page.locator('div[class*="codeBlobWrapper"]');
+  expect(await fileSurface.isVisible()).toBe(false);
+  expect(await codeRegion.isVisible()).toBe(false);
+  const panelLayout = await panel.evaluate((element) => ({
+    position: getComputedStyle(element).position,
+    top: element.getBoundingClientRect().top,
+    height: element.getBoundingClientRect().height,
+    viewportHeight: window.innerHeight,
+  }));
+  expect(panelLayout.position).toBe('relative');
+  expect(Math.abs(panelLayout.top + panelLayout.height - panelLayout.viewportHeight)).toBeLessThan(2);
 
   // Drill all the way in: panel frame (preview) → #artifact-frame (sandbox) →
   // #artifact (the rendered file). This is the full render chain — the part
@@ -108,9 +119,22 @@ test('Preview opens a dismissable right-aligned panel and renders the file', asy
   await rendered.waitFor({ timeout: 15_000 });
   expect(await rendered.count()).toBe(1);
 
+  await panel.locator('button', { hasText: 'Fullscreen' }).click();
+  const overlay = page.locator('#eesel-ghp-overlay');
+  await overlay.waitFor({ state: 'visible', timeout: 10_000 });
+  expect(await codeRegion.isVisible()).toBe(false);
+
+  await page
+    .frameLocator('#eesel-ghp-overlay')
+    .getByRole('button', { name: 'Exit fullscreen' })
+    .click();
+  await panel.waitFor({ state: 'visible', timeout: 10_000 });
+  expect(await overlay.count()).toBe(0);
+
   await panel.locator('button', { hasText: 'Close' }).click();
   await panel.waitFor({ state: 'detached', timeout: 10_000 });
-  expect(await page.locator('[data-testid="code-lines-container"]').isVisible()).toBe(true);
+  expect(await fileSurface.isVisible()).toBe(true);
+  expect(await codeRegion.isVisible()).toBe(true);
   expect(page.url()).not.toContain('#htmlpreview');
   await page.close();
 });

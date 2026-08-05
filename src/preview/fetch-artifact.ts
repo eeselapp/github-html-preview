@@ -1,6 +1,8 @@
 import { isAllowedPreviewSrc } from '@/lib/github';
 
-const FETCH_TIMEOUT_MS = 20_000;
+// Large generated artifacts can be tens of megabytes even though GitHub's blob
+// view refuses to render them. Give the raw download enough time to complete.
+const FETCH_TIMEOUT_MS = 60_000;
 
 export type ArtifactResult =
   | { ok: true; html: string }
