@@ -1,5 +1,6 @@
 import './style.css';
 import { urlFilename } from '@/lib/github';
+import { htmlTitle } from '@/lib/html-title';
 import {
   CACHE_GET_MESSAGE,
   CACHE_PUT_MESSAGE,
@@ -178,6 +179,11 @@ function renderInSandbox(html: string): void {
   document.body.appendChild(frame);
 }
 
+function updateNavbarTitle(html: string, fallback: string): void {
+  const name = document.querySelector<HTMLElement>('.eesel-filename');
+  if (name) name.textContent = (htmlTitle(html) ?? fallback) || 'HTML';
+}
+
 /** Match GitHub's chosen light/dark theme (passed as ?theme=) rather than only
  *  the OS scheme, so the navbar/backdrop don't clash with the page behind. */
 function applyTheme(theme: string | null): void {
@@ -208,6 +214,7 @@ async function main(): Promise<void> {
 
   const cached = src ? await getCachedArtifact(src) : null;
   if (cached !== null) {
+    updateNavbarTitle(cached, filename);
     renderInSandbox(cached);
     return;
   }
@@ -218,6 +225,7 @@ async function main(): Promise<void> {
     return;
   }
   if (src) cacheArtifact(src, result.html);
+  updateNavbarTitle(result.html, filename);
   renderInSandbox(result.html);
 }
 
