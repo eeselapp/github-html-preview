@@ -94,6 +94,7 @@ describe('button injection', () => {
 });
 
 describe('pull request diff buttons', () => {
+  const HEAD_SHA = 'ccee6080fad6210342bb5dab9ac1b8115553d5a1';
   const PR_PAGE = `
     <div class="js-file">
       <div class="file-header">
@@ -149,6 +150,60 @@ describe('pull request diff buttons', () => {
     setHref('https://github.com/o/r/pull/42');
     controller.sync();
     expect(document.querySelectorAll(PR_BTN)).toHaveLength(0);
+  });
+
+  it('injects after the current React diff header arrives asynchronously', () => {
+    const { controller } = setup(
+      `<a data-commit="${HEAD_SHA}"
+          href="https://github.com/o/r/pull/42/commits/${HEAD_SHA}">Commits</a>`,
+      'https://github.com/o/r/pull/42/changes'
+    );
+    controller.sync();
+    expect(document.querySelectorAll(PR_BTN)).toHaveLength(0);
+
+    document.body.insertAdjacentHTML('beforeend', `
+      <div class="PullRequestDiffsList-module__diffEntry__djnVa">
+        <div class="DiffFileHeader-module__diff-file-header__UuNN4">
+          <div class="DiffFileHeader-module__file-path-section__ZcmB1">
+            <h3><a id="async-file" href="#diff-abc"><code>\u200eyolo/ENG-5257/verify.html\u200e</code></a></h3>
+          </div>
+          <div class="d-flex flex-row flex-justify-end flex-items-center gap-2 flex-1">
+            <div id="async-actions" class="d-flex flex-items-center gap-2">
+              <button data-component="Button" data-size="small" data-variant="default"
+                      class="prc-Button-ButtonBase-test MarkAsViewedButton-module__iconOnly__test">
+                <span data-component="buttonContent" class="prc-Button-ButtonContent-test">
+                  <span data-component="text" class="prc-Button-Label-test">Viewed</span>
+                </span>
+              </button>
+              <button aria-haspopup="true">More options</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+    controller.sync();
+
+    const preview = document.querySelector<HTMLButtonElement>(PR_BTN);
+    expect(preview?.parentElement?.id).toBe('async-actions');
+    expect(preview?.textContent).toBe('Preview');
+    expect(preview?.classList.contains('prc-Button-ButtonBase-test')).toBe(true);
+    preview?.click();
+    expect(panelFrame()?.dataset.rawUrl).toBe(
+      `https://github.com/o/r/raw/${HEAD_SHA}/yolo/ENG-5257/verify.html`
+    );
+  });
+
+  it('leaves GitHub\'s own View file link untouched', () => {
+    const { controller } = setup(PR_PAGE, 'https://github.com/o/r/pull/42/changes');
+    const viewFile = document.createElement('a');
+    viewFile.id = 'view-file';
+    viewFile.href = 'https://github.com/o/r/blob/head-sha/yolo/plan.html';
+    viewFile.textContent = 'View file';
+    document.body.appendChild(viewFile);
+    controller.sync();
+
+    expect(document.getElementById('view-file')).toBe(viewFile);
+    expect(viewFile.href).toBe('https://github.com/o/r/blob/head-sha/yolo/plan.html');
   });
 });
 

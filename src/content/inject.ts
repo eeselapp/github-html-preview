@@ -17,8 +17,8 @@ export interface PreviewTarget {
 export interface PullRequestPreviewTarget {
   /** Raw URL for this revision of the changed HTML file. */
   rawUrl: string;
-  /** The revision-pinned file-header link used to resolve the raw URL. */
-  fileAnchor: HTMLAnchorElement;
+  /** The file-name link, used only as popup context (it may be a #diff link). */
+  fileAnchor: HTMLAnchorElement | null;
   /** GitHub's visible action row, where the Preview button should be mounted. */
   actionContainer: HTMLElement;
 }
@@ -87,19 +87,6 @@ export function detectPrimaryTarget(doc: Document, href: string): PreviewTarget 
   return null;
 }
 
-function isPullRequestFilesPage(href: string): boolean {
-  try {
-    const url = new URL(href);
-    return (
-      url.hostname === 'github.com' &&
-      /^\/[^/]+\/[^/]+\/pull\/\d+\/(?:files|changes)\/?$/.test(url.pathname)
-    );
-  }
-  catch {
-    return false;
-  }
-}
-
 const DIFF_CONTAINER_SELECTOR = [
   '.js-file',
   '[data-file-path]',
@@ -108,6 +95,7 @@ const DIFF_CONTAINER_SELECTOR = [
   '[data-testid="diff-file"]',
   '[class*="DiffFile"]',
   '[class*="diff-file"]',
+  '[class*="PullRequestDiffsList"][class*="diffEntry"]',
   'copilot-diff-entry',
 ].join(', ');
 
@@ -119,37 +107,157 @@ const DIFF_HEADER_SELECTOR = [
   '[class*="diff-file-header"]',
 ].join(', ');
 
+interface PullRequestLocation {
+  owner: string;
+  repo: string;
+  number: string;
+}
+
+function parsePullRequestFilesPage(href: string): PullRequestLocation | null {
+  try {
+    const url = new URL(href);
+    if (url.hostname !== 'github.com') return null;
+    const match = url.pathname.match(
+      /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/(?:files|changes)\/?$/
+    );
+    if (!match) return null;
+    return { owner: match[1], repo: match[2], number: match[3] };
+  }
+  catch {
+    return null;
+  }
+}
+
+/** Whether `href` is either generation of GitHub's PR file-diff route. */
+export function isPullRequestFilesPage(href: string): boolean {
+  return parsePullRequestFilesPage(href) != null;
+}
+
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
+
+/** Find the PR head revision from stable page metadata outside the async diff
+ * list. GitHub has used each of these forms across its classic and React PR
+ * views, so keep them as feature-detected fallbacks rather than one brittle
+ * selector. */
+function findPullRequestHeadSha(doc: Document, pr: PullRequestLocation): string | null {
+  for (const element of doc.querySelectorAll<HTMLElement>('[data-commit]')) {
+    const value = element.dataset.commit ?? '';
+    if (FULL_SHA_RE.test(value)) return value;
+  }
+
+  const escapedOwner = pr.owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedRepo = pr.repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedNumber = pr.number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hrefPatterns = [
+    new RegExp(`/${escapedOwner}/${escapedRepo}/blob/([0-9a-f]{40})/`, 'i'),
+    new RegExp(
+      `/${escapedOwner}/${escapedRepo}/pull/${escapedNumber}/commits/([0-9a-f]{40})(?:[/?#]|$)`,
+      'i'
+    ),
+  ];
+  for (const anchor of doc.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+    for (const pattern of hrefPatterns) {
+      const match = anchor.href.match(pattern);
+      if (match) return match[1];
+    }
+  }
+
+  for (const element of doc.querySelectorAll<HTMLElement>(
+    'include-fragment[src], [data-url*="sha2="], [data-url*="end_commit_oid="]'
+  )) {
+    const source = element.getAttribute('src') ?? element.dataset.url ?? '';
+    const match = source.match(/(?:[?&](?:sha2|end_commit_oid)=)([0-9a-f]{40})(?:[&#]|$)/i);
+    if (match) return match[1];
+  }
+
+  // The React /changes view embeds its navigation payload as JSON. Only scan
+  // JSON script blocks and require a specifically head-shaped key so a base or
+  // unrelated commit cannot be selected accidentally.
+  const embeddedHeadPattern =
+    /"(?:headRefOid|headOid|headSha|head_sha|endCommitOid|end_commit_oid)"\s*:\s*"([0-9a-f]{40})"/i;
+  for (const script of doc.querySelectorAll<HTMLScriptElement>('script[type="application/json"]')) {
+    const match = script.textContent?.match(embeddedHeadPattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function cleanDiffPath(value: string): string {
+  // GitHub wraps the visible filename with left-to-right marks in the React
+  // diff header. Strip bidi formatting controls without altering real spaces.
+  return value.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim();
+}
+
+function diffHeaderPath(header: HTMLElement): string {
+  const container = header.closest<HTMLElement>(DIFF_CONTAINER_SELECTOR);
+  const fromData =
+    header.dataset.path ??
+    header.dataset.filePath ??
+    container?.dataset.filePath ??
+    container?.dataset.path;
+  if (fromData) return cleanDiffPath(fromData);
+
+  const name = header.querySelector<HTMLElement>(
+    'h3 a[href^="#diff-"] code, h3 code, [class*="file-name"] code'
+  );
+  if (name?.textContent) return cleanDiffPath(name.textContent);
+
+  const blobAnchor = header.querySelector<HTMLAnchorElement>('a[href*="/blob/"]');
+  try {
+    const match = blobAnchor && new URL(blobAnchor.href).pathname.match(/\/blob\/[^/]+\/(.+)$/);
+    return cleanDiffPath(match?.[1] ? decodeURIComponent(match[1]) : '');
+  }
+  catch {
+    return '';
+  }
+}
+
+function rawUrlForPullRequestFile(
+  pr: PullRequestLocation,
+  headSha: string,
+  path: string
+): string {
+  const encodedPath = path.split('/').map((part) => encodeURIComponent(part)).join('/');
+  return `https://github.com/${pr.owner}/${pr.repo}/raw/${headSha}/${encodedPath}`;
+}
+
 /**
- * Find changed HTML files on a PR's Files changed/Changes tab. GitHub includes
- * a revision-pinned `/blob/<head sha>/<path>` link in each file header; turning
- * that into `/raw/` avoids an API call and previews the exact revision shown in
- * the diff (including private repositories).
+ * Find changed HTML files on a PR's Files changed/Changes tab. The classic UI
+ * includes a revision-pinned blob link in the header. The current async React
+ * UI initially includes only `#diff…` + visible filename, while "View file" is
+ * rendered later in a menu portal, so combine that filename with the PR head
+ * revision found in page metadata. Both paths produce the exact private-repo-
+ * compatible github.com/raw URL without changing GitHub's own View file link.
  */
 export function findPullRequestHtmlTargets(
   doc: Document,
   href: string
 ): PullRequestPreviewTarget[] {
-  if (!isPullRequestFilesPage(href)) return [];
+  const pr = parsePullRequestFilesPage(href);
+  if (!pr) return [];
 
   const byRawUrl = new Map<string, PullRequestPreviewTarget>();
-  for (const fileAnchor of doc.querySelectorAll<HTMLAnchorElement>('a[href*="/blob/"]')) {
-    if (!isHtmlPath(fileAnchor.href)) continue;
-    const rawUrl = blobToRawUrl(fileAnchor.href);
+  const headSha = findPullRequestHeadSha(doc, pr);
+  for (const header of doc.querySelectorAll<HTMLElement>(DIFF_HEADER_SELECTOR)) {
+    const path = diffHeaderPath(header);
+    if (!isHtmlPath(path)) continue;
+
+    const blobAnchor = header.querySelector<HTMLAnchorElement>('a[href*="/blob/"]');
+    const rawUrl = (blobAnchor && blobToRawUrl(blobAnchor.href)) ||
+      (headSha && rawUrlForPullRequestFile(pr, headSha, path));
     if (!rawUrl) continue;
 
-    // Only accept blob links belonging to a bounded diff/header. This avoids
-    // adding buttons to HTML links in PR descriptions, comments, or code text.
-    const diffContainer = fileAnchor.closest<HTMLElement>(DIFF_CONTAINER_SELECTOR);
-    const diffHeader = fileAnchor.closest<HTMLElement>(DIFF_HEADER_SELECTOR);
-    if (!diffContainer && !diffHeader) continue;
-
-    const header = diffHeader ?? diffContainer?.querySelector<HTMLElement>(DIFF_HEADER_SELECTOR);
+    const fileAnchor =
+      blobAnchor ??
+      header.querySelector<HTMLAnchorElement>('h3 a[href^="#diff-"], a[href^="#diff-"]');
+    const moreOptions = header.querySelector<HTMLButtonElement>('button[aria-haspopup="true"]');
     const actionContainer =
       header?.querySelector<HTMLElement>('.file-actions > .d-flex') ??
       header?.querySelector<HTMLElement>(
         '.file-actions, [data-testid="file-header-actions"], [class*="FileHeader"][class*="actions"]'
       ) ??
-      fileAnchor.parentElement;
+      moreOptions?.parentElement ??
+      fileAnchor?.parentElement;
     if (!actionContainer) continue;
 
     if (!byRawUrl.has(rawUrl)) {

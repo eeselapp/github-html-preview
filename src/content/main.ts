@@ -15,6 +15,7 @@ import {
   SET_MODE_MESSAGE,
 } from '@/lib/messages';
 import { PreviewController, type ControllerEnv } from './controller';
+import { isPullRequestFilesPage } from './inject';
 
 // Content script for github.com / gist.github.com. It owns nothing on the page
 // except what it injects; all the logic lives in PreviewController, which is
@@ -136,11 +137,11 @@ chrome.runtime?.onMessage?.addListener((message) => {
   }
 });
 
-// With auto-open enabled, an ordinary HTML link click outside a direct blob
-// view becomes a floating preview instead of a navigation. On a blob page we
-// preserve GitHub's normal file-to-file navigation; sync() then opens the new
-// HTML destination inline. Modified/new-tab/download clicks retain their native
-// behavior in every context.
+// With auto-open enabled, an ordinary HTML link click outside a direct blob or
+// PR diff becomes a floating preview instead of a navigation. Blob pages keep
+// normal file-to-file navigation (sync then opens the destination inline), and
+// PR diffs keep View file native because they have a separate Preview button.
+// Modified/new-tab/download clicks retain their native behavior everywhere.
 window.addEventListener(
   'click',
   (event) => {
@@ -152,7 +153,10 @@ window.addEventListener(
       event.ctrlKey ||
       event.shiftKey ||
       event.altKey ||
-      parseBlobUrl(location.href)
+      parseBlobUrl(location.href) ||
+      // PR diffs have an explicit Preview action per HTML file. Keep GitHub's
+      // own View file link native even when Auto-open is enabled.
+      isPullRequestFilesPage(location.href)
     ) {
       return;
     }

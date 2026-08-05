@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { detectPrimaryTarget, findCodeRegion, findPullRequestHtmlTargets } from './inject';
+import {
+  detectPrimaryTarget,
+  findCodeRegion,
+  findPullRequestHtmlTargets,
+  isPullRequestFilesPage,
+} from './inject';
 
 function docWith(html: string): Document {
   document.body.innerHTML = html;
@@ -70,26 +75,28 @@ describe('detectPrimaryTarget', () => {
 });
 
 describe('findPullRequestHtmlTargets', () => {
+  const HEAD_SHA = 'ccee6080fad6210342bb5dab9ac1b8115553d5a1';
+
   it('finds and deduplicates revision-pinned HTML blob links in diff headers', () => {
     const doc = docWith(`
       <div class="js-file">
         <div class="file-header">
-          <a id="plan" href="https://github.com/o/r/blob/head-sha/plans/plan.html">plan.html</a>
-          <a href="https://github.com/o/r/blob/head-sha/plans/plan.html">View file</a>
+          <a id="plan" href="https://github.com/o/r/blob/${HEAD_SHA}/plans/plan.html">plan.html</a>
+          <a href="https://github.com/o/r/blob/${HEAD_SHA}/plans/plan.html">View file</a>
           <div class="file-actions"><div class="d-flex" id="plan-actions"></div></div>
         </div>
       </div>
       <div data-file-path="notes/readme.htm">
         <div data-testid="file-header">
-          <a id="notes" href="https://github.com/o/r/blob/head-sha/notes/readme.htm">readme.htm</a>
+          <a id="notes" href="https://github.com/o/r/blob/${HEAD_SHA}/notes/readme.htm">readme.htm</a>
         </div>
       </div>
       <div class="js-file">
         <div class="file-header">
-          <a href="https://github.com/o/r/blob/head-sha/src/app.ts">app.ts</a>
+          <a href="https://github.com/o/r/blob/${HEAD_SHA}/src/app.ts">app.ts</a>
         </div>
       </div>
-      <p><a href="https://github.com/o/r/blob/head-sha/comment-link.html">comment link</a></p>
+      <p><a href="https://github.com/o/r/blob/${HEAD_SHA}/comment-link.html">comment link</a></p>
     `);
 
     const targets = findPullRequestHtmlTargets(
@@ -97,11 +104,42 @@ describe('findPullRequestHtmlTargets', () => {
       'https://github.com/o/r/pull/42/changes#diff-abc'
     );
     expect(targets.map(({ rawUrl }) => rawUrl)).toEqual([
-      'https://github.com/o/r/raw/head-sha/plans/plan.html',
-      'https://github.com/o/r/raw/head-sha/notes/readme.htm',
+      `https://github.com/o/r/raw/${HEAD_SHA}/plans/plan.html`,
+      `https://github.com/o/r/raw/${HEAD_SHA}/notes/readme.htm`,
     ]);
-    expect(targets.map(({ fileAnchor }) => fileAnchor.id)).toEqual(['plan', 'notes']);
+    expect(targets.map(({ fileAnchor }) => fileAnchor?.id)).toEqual(['plan', 'notes']);
     expect(targets[0].actionContainer.id).toBe('plan-actions');
+  });
+
+  it('detects async React diff headers before the View file menu is rendered', () => {
+    const doc = docWith(`
+      <script type="application/json">{"payload":{"headRefOid":"${HEAD_SHA}"}}</script>
+      <div class="PullRequestDiffsList-module__diffEntry__djnVa">
+        <div class="Diff-module__diffHeaderWrapper__UgUyv" data-diff-header-wrapper="true">
+          <div class="DiffFileHeader-module__diff-file-header__UuNN4">
+            <div class="DiffFileHeader-module__file-path-section__ZcmB1">
+              <h3 class="DiffFileHeader-module__file-name__VVXpg">
+                <a id="react-file" href="#diff-abc"><code>\u200eyolo/ENG-5257/verify.html\u200e</code></a>
+              </h3>
+            </div>
+            <div class="d-flex flex-row flex-justify-end flex-items-center gap-2 flex-1">
+              <div id="react-actions" class="d-flex flex-items-center gap-2">
+                <button data-component="Button" data-size="small">Viewed</button>
+                <button aria-haspopup="true">More options</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const targets = findPullRequestHtmlTargets(doc, 'https://github.com/o/r/pull/42/changes');
+    expect(targets).toHaveLength(1);
+    expect(targets[0].rawUrl).toBe(
+      `https://github.com/o/r/raw/${HEAD_SHA}/yolo/ENG-5257/verify.html`
+    );
+    expect(targets[0].fileAnchor?.id).toBe('react-file');
+    expect(targets[0].actionContainer.id).toBe('react-actions');
   });
 
   it('supports GitHub files routes and ignores non-PR pages', () => {
@@ -112,6 +150,9 @@ describe('findPullRequestHtmlTargets', () => {
     `);
     expect(findPullRequestHtmlTargets(doc, 'https://github.com/o/r/pull/42/files')).toHaveLength(1);
     expect(findPullRequestHtmlTargets(doc, 'https://github.com/o/r/issues/42')).toEqual([]);
+    expect(isPullRequestFilesPage('https://github.com/o/r/pull/42/files')).toBe(true);
+    expect(isPullRequestFilesPage('https://github.com/o/r/pull/42/changes#diff-abc')).toBe(true);
+    expect(isPullRequestFilesPage('https://github.com/o/r/pull/42')).toBe(false);
   });
 });
 

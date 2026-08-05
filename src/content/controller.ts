@@ -359,11 +359,9 @@ export class PreviewController {
 
       const button = doc.createElement('button');
       button.type = 'button';
-      button.textContent = 'Preview';
-      button.className = `btn btn-sm ${PR_BTN_CLASS}`;
+      this.stylePullRequestButton(button, actionContainer);
       button.dataset.eeselRawUrl = rawUrl;
       button.title = `Preview ${urlFilename(rawUrl)}`;
-      button.style.cssText = 'margin:0 6px;flex:0 0 auto;';
       button.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -371,6 +369,47 @@ export class PreviewController {
       });
       actionContainer.prepend(button);
     }
+  }
+
+  /** Match whichever generation of GitHub's button system the diff header is
+   * using. The React PR view ships hashed Primer classes, so borrow only its
+   * base/content classes from the neighboring Viewed button. */
+  private stylePullRequestButton(button: HTMLButtonElement, actionContainer: HTMLElement): void {
+    const reference = actionContainer.querySelector<HTMLButtonElement>(
+      'button[data-component="Button"][data-size="small"]'
+    );
+    const baseClass = reference && [...reference.classList].find((name) =>
+      name.startsWith('prc-Button-ButtonBase-')
+    );
+    const referenceContent = reference?.querySelector<HTMLElement>(
+      '[data-component="buttonContent"]'
+    );
+    const referenceLabel = reference?.querySelector<HTMLElement>('[data-component="text"]');
+
+    if (baseClass && referenceContent) {
+      button.className = `${baseClass} ${PR_BTN_CLASS}`;
+      button.dataset.component = 'Button';
+      button.dataset.loading = 'false';
+      button.dataset.size = 'small';
+      button.dataset.variant = 'default';
+
+      const content = this.env.doc.createElement('span');
+      content.dataset.component = 'buttonContent';
+      content.dataset.align = 'center';
+      content.className = referenceContent.className;
+      const label = this.env.doc.createElement('span');
+      label.dataset.component = 'text';
+      label.className = referenceLabel?.className ?? '';
+      label.textContent = 'Preview';
+      content.appendChild(label);
+      button.appendChild(content);
+      button.style.cssText = 'flex:0 0 auto;';
+      return;
+    }
+
+    button.textContent = 'Preview';
+    button.className = `btn btn-sm ${PR_BTN_CLASS}`;
+    button.style.cssText = 'margin:0 6px;flex:0 0 auto;';
   }
 
   private removePullRequestButtons(): void {
