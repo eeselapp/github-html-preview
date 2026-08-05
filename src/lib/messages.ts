@@ -16,6 +16,7 @@ export const SET_MODE_MESSAGE = 'eesel-ghp:set-mode';
 export const CACHE_GET_MESSAGE = 'eesel-ghp:cache-get';
 export const CACHE_RESULT_MESSAGE = 'eesel-ghp:cache-result';
 export const CACHE_PUT_MESSAGE = 'eesel-ghp:cache-put';
+export const ARTIFACT_TITLE_MESSAGE = 'eesel-ghp:artifact-title';
 
 // Sent by the background service worker (chrome.runtime.sendMessage) down to the
 // content script when the user picks "Preview HTML" from the right-click context
@@ -52,4 +53,10 @@ export interface CachePutMessage {
   type: typeof CACHE_PUT_MESSAGE;
   src: string;
   html: string;
+}
+
+export interface ArtifactTitleMessage {
+  type: typeof ARTIFACT_TITLE_MESSAGE;
+  src: string;
+  title: string;
 }

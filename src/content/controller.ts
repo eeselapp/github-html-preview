@@ -4,6 +4,8 @@ import {
   withoutPreviewHash,
   withPreviewHash,
 } from '@/lib/preview-state';
+import { urlFilename } from '@/lib/github';
+import { shortTitle } from '@/lib/html-title';
 import { detectPrimaryTarget, type PreviewTarget } from './inject';
 
 // IDs for what we inject, so we can find and tear down our own elements
@@ -46,6 +48,8 @@ export interface ControllerEnv {
   getHash(): string;
   /** Build the preview-page URL that renders the given raw URL. */
   previewUrlFor(rawUrl: string, mode: 'inline' | 'fullscreen'): string;
+  /** Extension icon shown in the inline preview bar. */
+  previewIconUrl?: string;
   /** Persist the "always open the preview" preference (chrome.storage). Optional
    *  so tests can omit it; the content script wires it to chrome.storage.local. */
   persistAutoOpen?(value: boolean): void;
@@ -160,6 +164,21 @@ export class PreviewController {
     const href = this.env.getHref();
     this.env.replaceHref(mode === 'fullscreen' ? withFullscreenHash(href) : withPreviewHash(href));
     this.enforce();
+  }
+
+  /** Replace the inline filename once the preview frame finds a document title. */
+  setArtifactTitle(rawUrl: string, title: string): void {
+    const frame = this.env.doc.getElementById(PANEL_FRAME_ID);
+    const label = this.env.doc.querySelector<HTMLElement>(`#${PANEL_ID} [data-eesel-title]`);
+    if (
+      frame instanceof HTMLIFrameElement &&
+      frame.dataset.rawUrl === rawUrl &&
+      label &&
+      title.trim()
+    ) {
+      label.textContent = shortTitle(title);
+      label.title = title;
+    }
   }
 
   /**
@@ -336,8 +355,14 @@ export class PreviewController {
       'flex:0 0 auto',
     ].join(';');
 
+    const icon = doc.createElement('img');
+    icon.src = this.env.previewIconUrl ?? '';
+    icon.alt = '';
+    icon.style.cssText = 'width:18px;height:18px;border-radius:4px;flex:0 0 auto;';
+
     const title = doc.createElement('span');
-    title.textContent = 'HTML preview';
+    title.textContent = shortTitle(urlFilename(rawUrl) || 'HTML');
+    title.dataset.eeselTitle = '';
     title.style.cssText =
       'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;';
 
@@ -385,7 +410,7 @@ export class PreviewController {
       'opacity:0.6',
     ].join(';');
 
-    toolbar.append(title, autoOpen, fullscreen, close);
+    toolbar.append(icon, title, autoOpen, fullscreen, close);
     panel.append(toolbar, frame, grip);
     doc.body.appendChild(panel);
 

@@ -1,7 +1,8 @@
 import './style.css';
 import { urlFilename } from '@/lib/github';
-import { htmlTitle } from '@/lib/html-title';
+import { htmlTitle, shortTitle } from '@/lib/html-title';
 import {
+  ARTIFACT_TITLE_MESSAGE,
   CACHE_GET_MESSAGE,
   CACHE_PUT_MESSAGE,
   CACHE_RESULT_MESSAGE,
@@ -179,9 +180,16 @@ function renderInSandbox(html: string): void {
   document.body.appendChild(frame);
 }
 
-function updateNavbarTitle(html: string, fallback: string): void {
+function updateArtifactTitle(html: string, fallback: string, src: string | null): void {
+  const title = (htmlTitle(html) ?? fallback) || 'HTML';
   const name = document.querySelector<HTMLElement>('.eesel-filename');
-  if (name) name.textContent = (htmlTitle(html) ?? fallback) || 'HTML';
+  if (name) {
+    name.textContent = shortTitle(title);
+    name.title = title;
+  }
+  if (src && window.parent !== window) {
+    window.parent.postMessage({ type: ARTIFACT_TITLE_MESSAGE, src, title }, '*');
+  }
 }
 
 /** Match GitHub's chosen light/dark theme (passed as ?theme=) rather than only
@@ -214,7 +222,7 @@ async function main(): Promise<void> {
 
   const cached = src ? await getCachedArtifact(src) : null;
   if (cached !== null) {
-    updateNavbarTitle(cached, filename);
+    updateArtifactTitle(cached, filename, src);
     renderInSandbox(cached);
     return;
   }
@@ -225,7 +233,7 @@ async function main(): Promise<void> {
     return;
   }
   if (src) cacheArtifact(src, result.html);
-  updateNavbarTitle(result.html, filename);
+  updateArtifactTitle(result.html, filename, src);
   renderInSandbox(result.html);
 }
 

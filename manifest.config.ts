@@ -60,14 +60,13 @@ export default defineManifest({
       // Both pages must be web-accessible: preview.html is injected as the
       // fullscreen overlay iframe into a github.com page, so the top frame is a
       // web origin — which means preview.html's own loads of the sandbox.html
-      // child iframe AND its navbar logo (the theme-matched black/white mark)
-      // are WAR-gated too. (public/logo.png is only the manifest icon now, which
-      // isn't a page subresource, so it doesn't need to be listed here.)
+      // child iframe and preview logos are WAR-gated too.
       resources: [
         'src/preview/index.html',
         'src/sandbox/index.html',
         'public/black-logo.svg',
         'public/white-logo.svg',
+        'public/logo.png',
       ],
       matches: ['https://github.com/*', 'https://gist.github.com/*'],
     },

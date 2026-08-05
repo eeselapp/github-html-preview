@@ -1,5 +1,6 @@
 import { blobToRawUrl, isAllowedPreviewSrc, isHtmlPath, isRawFileUrl } from '@/lib/github';
 import {
+  ARTIFACT_TITLE_MESSAGE,
   CACHE_GET_MESSAGE,
   CACHE_PUT_MESSAGE,
   CACHE_RESULT_MESSAGE,
@@ -44,6 +45,7 @@ const env: ControllerEnv = {
   getHash: () => location.hash,
   previewUrlFor: (rawUrl, mode) =>
     `${chrome.runtime.getURL(PREVIEW_PAGE)}?src=${encodeURIComponent(rawUrl)}&mode=${mode}&theme=${resolveGitHubTheme()}`,
+  previewIconUrl: chrome.runtime.getURL('public/logo.png'),
   persistAutoOpen: (value) => {
     void chrome.storage?.local?.set({ [AUTO_OPEN_KEY]: value });
   },
@@ -95,6 +97,13 @@ window.addEventListener('message', (event) => {
     typeof data.html === 'string'
   ) {
     cachedArtifact = { src: data.src, html: data.html };
+  }
+  else if (
+    data?.type === ARTIFACT_TITLE_MESSAGE &&
+    typeof data.src === 'string' &&
+    typeof data.title === 'string'
+  ) {
+    controller.setArtifactTitle(data.src, data.title);
   }
 });
 
