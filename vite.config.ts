@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { crx } from '@crxjs/vite-plugin';
-import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type Plugin } from 'vite';
 import zip from 'vite-plugin-zip-pack';
 import manifest from './manifest.config.js';
@@ -48,13 +47,11 @@ export default defineConfig({
       input: {
         preview: 'src/preview/index.html',
         sandbox: 'src/sandbox/index.html',
-        settings: 'src/settings/index.html',
       },
     },
   },
   plugins: [
     crx({ manifest }),
-    tailwindcss(),
     stripSandboxModuleScripts(),
     zip({ outDir: 'release', outFileName: `crx-${releaseName}-${version}.zip` }),
   ],
