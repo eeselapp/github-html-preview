@@ -46,9 +46,8 @@ export interface ControllerEnv {
   getHash(): string;
   /** Build the preview-page URL that renders the given raw URL. */
   previewUrlFor(rawUrl: string, mode: 'inline' | 'fullscreen'): string;
-  /** Persist the "always open the preview" preference (chrome.storage). Optional
-   *  so tests can omit it; the content script wires it to chrome.storage.local. */
-  persistAutoOpen?(value: boolean): void;
+  /** Open the extension's settings page. */
+  openSettings?(): void;
   /** Persist the panel's last position+size so it survives reloads/new tabs. */
   persistRect?(rect: Rect): void;
 }
@@ -162,16 +161,9 @@ export class PreviewController {
     this.enforce();
   }
 
-  /**
-   * Set the "always open the preview" preference. From the panel's own toggle
-   * (`persist` true) it's written to storage; from a storage-change echo
-   * (`persist` false) it isn't. Enabling it opens the current file immediately
-   * if nothing's showing, so the toggle gives instant feedback.
-   */
-  setAutoOpen(value: boolean, persist = true): void {
-    const changed = this.autoOpen !== value;
+  /** Apply the saved "always open the preview" preference. */
+  setAutoOpen(value: boolean): void {
     this.autoOpen = value;
-    if (persist && changed) this.env.persistAutoOpen?.(value);
 
     if (value && this.target && this.mode() === 'code' && this.fragment() === '') {
       this.env.replaceHref(withPreviewHash(this.env.getHref()));
@@ -341,7 +333,17 @@ export class PreviewController {
     title.style.cssText =
       'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;';
 
-    const autoOpen = this.buildAutoOpenToggle();
+    const settings = doc.createElement('button');
+    settings.type = 'button';
+    settings.textContent = '⚙';
+    settings.className = 'btn btn-sm';
+    settings.dataset.eeselAction = 'settings';
+    settings.setAttribute('aria-label', 'Settings');
+    settings.title = 'Settings';
+    settings.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.env.openSettings?.();
+    });
 
     const fullscreen = doc.createElement('button');
     fullscreen.type = 'button';
@@ -385,40 +387,12 @@ export class PreviewController {
       'opacity:0.6',
     ].join(';');
 
-    toolbar.append(title, autoOpen, fullscreen, close);
+    toolbar.append(title, settings, fullscreen, close);
     panel.append(toolbar, frame, grip);
     doc.body.appendChild(panel);
 
     this.wireDrag(toolbar, panel, frame, rect, 'move');
     this.wireDrag(grip, panel, frame, rect, 'resize');
-  }
-
-  private buildAutoOpenToggle(): HTMLLabelElement {
-    const { doc } = this.env;
-    const label = doc.createElement('label');
-    label.title = 'Automatically open this preview on every HTML file';
-    label.style.cssText = [
-      'display:inline-flex',
-      'align-items:center',
-      'gap:5px',
-      'cursor:pointer',
-      'font-size:12px',
-      'white-space:nowrap',
-      `color:${C.fgMuted}`,
-      'flex:0 0 auto',
-    ].join(';');
-
-    const box = doc.createElement('input');
-    box.type = 'checkbox';
-    box.checked = this.autoOpen;
-    box.style.cssText = 'margin:0;cursor:pointer;';
-    box.addEventListener('change', () => this.setAutoOpen(box.checked, true));
-
-    const text = doc.createElement('span');
-    text.textContent = 'Auto-open';
-
-    label.append(box, text);
-    return label;
   }
 
   /**

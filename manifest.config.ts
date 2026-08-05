@@ -43,6 +43,7 @@ export default defineManifest({
     service_worker: 'src/background/service-worker.ts',
     type: 'module',
   },
+  options_page: 'src/settings/index.html',
   // `storage` backs the one persisted preference: "always open the preview"
   // (chrome.storage.local), read+written by the content script and synced across
   // tabs via storage.onChanged. Still no `tabs`/`scripting` — the preview is an

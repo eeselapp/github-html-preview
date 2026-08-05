@@ -80,6 +80,8 @@ function hideLoading(): void {
 const ICON_EXIT_FULLSCREEN =
   '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>';
 const ICON_CLOSE = '<path d="M18 6 6 18M6 6l12 12"/>';
+const ICON_SETTINGS =
+  '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.57 15 1.7 1.7 0 0 0 3 14H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.57 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.06 4.6a1.7 1.7 0 0 0 1.88-.34L17 4.2 19.83 7l-.06.06A1.7 1.7 0 0 0 19.43 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/>';
 
 function iconSvg(paths: string): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -142,6 +144,7 @@ function buildNavbar(filename: string, theme: 'light' | 'dark'): HTMLElement {
 
   const actions = document.createElement('div');
   actions.className = 'eesel-actions';
+  const settings = navButton('Settings', ICON_SETTINGS, () => chrome.runtime.openOptionsPage());
   const exit = navButton('Exit fullscreen', ICON_EXIT_FULLSCREEN, () =>
     window.parent.postMessage({ type: SET_MODE_MESSAGE, mode: 'inline' }, '*')
   );
@@ -149,7 +152,7 @@ function buildNavbar(filename: string, theme: 'light' | 'dark'): HTMLElement {
     window.parent.postMessage({ type: CLOSE_MESSAGE }, '*')
   );
   close.classList.add('eesel-navbtn-primary');
-  actions.append(exit, close);
+  actions.append(settings, exit, close);
 
   nav.append(brand, actions);
   return nav;

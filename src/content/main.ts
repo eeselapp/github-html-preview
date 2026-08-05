@@ -44,9 +44,7 @@ const env: ControllerEnv = {
   getHash: () => location.hash,
   previewUrlFor: (rawUrl, mode) =>
     `${chrome.runtime.getURL(PREVIEW_PAGE)}?src=${encodeURIComponent(rawUrl)}&mode=${mode}&theme=${resolveGitHubTheme()}`,
-  persistAutoOpen: (value) => {
-    void chrome.storage?.local?.set({ [AUTO_OPEN_KEY]: value });
-  },
+  openSettings: () => void chrome.runtime.openOptionsPage(),
   persistRect: (rect) => {
     void chrome.storage?.local?.set({ [PANEL_RECT_KEY]: rect });
   },
@@ -61,12 +59,12 @@ chrome.storage?.local
   ?.get([AUTO_OPEN_KEY, PANEL_RECT_KEY])
   .then((stored) => {
     controller.restorePanelRect(stored?.[PANEL_RECT_KEY] ?? null);
-    controller.setAutoOpen(Boolean(stored?.[AUTO_OPEN_KEY]), false);
+    controller.setAutoOpen(Boolean(stored?.[AUTO_OPEN_KEY]));
   })
   .catch(() => {});
 chrome.storage?.onChanged?.addListener((changes, area) => {
   if (area === 'local' && AUTO_OPEN_KEY in changes) {
-    controller.setAutoOpen(Boolean(changes[AUTO_OPEN_KEY].newValue), false);
+    controller.setAutoOpen(Boolean(changes[AUTO_OPEN_KEY].newValue));
   }
 });
 

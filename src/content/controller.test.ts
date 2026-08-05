@@ -23,7 +23,7 @@ function setup(
 ) {
   document.body.innerHTML = body;
   let href = startHref;
-  const persisted: boolean[] = [];
+  let settingsOpened = 0;
   const persistedRects: { left: number; top: number; width: number; height: number }[] = [];
   const env: ControllerEnv = {
     doc: document,
@@ -41,8 +41,8 @@ function setup(
     },
     previewUrlFor: (raw, mode) =>
       `chrome-extension://abc/src/preview/index.html?src=${encodeURIComponent(raw)}&mode=${mode}`,
-    persistAutoOpen: (value) => {
-      persisted.push(value);
+    openSettings: () => {
+      settingsOpened += 1;
     },
     persistRect: (rect) => {
       persistedRects.push(rect);
@@ -51,7 +51,7 @@ function setup(
   const controller = new PreviewController(env);
   return {
     controller,
-    persisted,
+    getSettingsOpened: () => settingsOpened,
     persistedRects,
     getHref: () => href,
     setHref: (h: string) => {
@@ -150,6 +150,16 @@ describe('Preview panel toggle', () => {
     expect(present(PANEL)).toBe(false);
     expect(getHref()).toBe('https://github.com/o/r/blob/main/x.html');
   });
+
+  it('opens settings from the cog button', () => {
+    const { controller, getSettingsOpened } = setup();
+    controller.sync();
+    click(BTN);
+    document
+      .querySelector<HTMLButtonElement>('#eesel-ghp-panel [data-eesel-action="settings"]')
+      ?.click();
+    expect(getSettingsOpened()).toBe(1);
+  });
 });
 
 describe('fullscreen toggle', () => {
@@ -222,7 +232,7 @@ describe('requestClose', () => {
 describe('always-open ("auto-open") preference', () => {
   it('auto-opens the inline panel on a clean HTML page when enabled', () => {
     const { controller } = setup();
-    controller.setAutoOpen(true, false); // seeded from storage; target not yet detected
+    controller.setAutoOpen(true); // seeded from storage; target not yet detected
     controller.sync();
     expect(present(PANEL)).toBe(true);
   });
@@ -232,7 +242,7 @@ describe('always-open ("auto-open") preference', () => {
       HTML_PAGE,
       'https://github.com/o/r/blob/main/x.html#L12'
     );
-    controller.setAutoOpen(true, false);
+    controller.setAutoOpen(true);
     controller.sync();
     expect(present(PANEL)).toBe(false);
     expect(getHref()).toBe('https://github.com/o/r/blob/main/x.html#L12');
@@ -240,7 +250,7 @@ describe('always-open ("auto-open") preference', () => {
 
   it('stays closed after the user closes it on the same file (no reopen loop)', () => {
     const { controller } = setup();
-    controller.setAutoOpen(true, false);
+    controller.setAutoOpen(true);
     controller.sync(); // auto-opens
     controller.requestClose(); // user closes
     controller.sync(); // a later DOM mutation: must NOT reopen the same file
@@ -249,7 +259,7 @@ describe('always-open ("auto-open") preference', () => {
 
   it('re-auto-opens after navigating to a different HTML file', () => {
     const { controller, setHref } = setup();
-    controller.setAutoOpen(true, false);
+    controller.setAutoOpen(true);
     controller.sync(); // opens for x.html
     controller.requestClose();
 
@@ -260,21 +270,12 @@ describe('always-open ("auto-open") preference', () => {
     expect(present(PANEL)).toBe(true);
   });
 
-  it('toggling the panel checkbox persists the preference', () => {
-    const { controller, persisted } = setup();
+  it('does not show the old checkbox in the panel', () => {
+    const { controller } = setup();
     controller.sync();
-    click(BTN); // open the panel so the toggle exists
+    click(BTN);
     const box = document.querySelector<HTMLInputElement>('#eesel-ghp-panel input[type="checkbox"]');
-    expect(box).not.toBeNull();
-    box!.checked = true;
-    box!.dispatchEvent(new Event('change'));
-    expect(persisted).toEqual([true]);
-  });
-
-  it('a storage echo (persist=false) does not write back to storage', () => {
-    const { controller, persisted } = setup();
-    controller.setAutoOpen(true, false);
-    expect(persisted).toEqual([]);
+    expect(box).toBeNull();
   });
 });
 
