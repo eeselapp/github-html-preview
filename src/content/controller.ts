@@ -6,11 +6,17 @@ import {
 } from '@/lib/preview-state';
 import { urlFilename } from '@/lib/github';
 import { shortTitle } from '@/lib/html-title';
-import { detectPrimaryTarget, findCodeRegion, type PreviewTarget } from './inject';
+import {
+  detectPrimaryTarget,
+  findCodeRegion,
+  findPullRequestHtmlTargets,
+  type PreviewTarget,
+} from './inject';
 
 // IDs for what we inject, so we can find and tear down our own elements
 // idempotently across GitHub's SPA re-renders.
 const BTN_ID = 'eesel-ghp-preview-btn';
+const PR_BTN_CLASS = 'eesel-ghp-pr-preview-btn';
 const OVERLAY_ID = 'eesel-ghp-overlay';
 const PANEL_ID = 'eesel-ghp-panel';
 const PANEL_FRAME_ID = 'eesel-ghp-panel-frame';
@@ -119,12 +125,14 @@ export class PreviewController {
     if (this.autoOpen && isNewTarget && this.mode() === 'code' && this.fragment() === '') {
       this.env.replaceHref(withPreviewHash(this.env.getHref()));
     }
+    this.syncPullRequestButtons();
     this.enforce();
   }
 
   /** Tear everything down (used when the content script unloads). */
   destroy(): void {
     this.target = null;
+    this.removePullRequestButtons();
     this.enforce();
   }
 
@@ -326,6 +334,47 @@ export class PreviewController {
 
   private removeButton(): void {
     this.env.doc.getElementById(BTN_ID)?.remove();
+  }
+
+  /** Add one manual Preview action to every changed HTML file in a PR diff.
+   * The popup is intentionally ad-hoc: it does not mutate the PR URL/hash or
+   * replace the multi-file diff underneath it. */
+  private syncPullRequestButtons(): void {
+    const { doc } = this.env;
+    const targets = findPullRequestHtmlTargets(doc, this.env.getHref());
+    const wanted = new Set(targets.map(({ rawUrl }) => rawUrl));
+    const existingByRawUrl = new Map<string, HTMLButtonElement>();
+
+    for (const existing of doc.querySelectorAll<HTMLButtonElement>(`.${PR_BTN_CLASS}`)) {
+      if (!existing.dataset.eeselRawUrl || !wanted.has(existing.dataset.eeselRawUrl)) {
+        existing.remove();
+      }
+      else {
+        existingByRawUrl.set(existing.dataset.eeselRawUrl, existing);
+      }
+    }
+
+    for (const { rawUrl, fileAnchor, actionContainer } of targets) {
+      if (existingByRawUrl.has(rawUrl) || !actionContainer.isConnected) continue;
+
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Preview';
+      button.className = `btn btn-sm ${PR_BTN_CLASS}`;
+      button.dataset.eeselRawUrl = rawUrl;
+      button.title = `Preview ${urlFilename(rawUrl)}`;
+      button.style.cssText = 'margin:0 6px;flex:0 0 auto;';
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.openPreview(rawUrl, fileAnchor, 'floating');
+      });
+      actionContainer.prepend(button);
+    }
+  }
+
+  private removePullRequestButtons(): void {
+    for (const button of this.env.doc.querySelectorAll(`.${PR_BTN_CLASS}`)) button.remove();
   }
 
   /** Re-point an already-open preview frame at a new file when navigation

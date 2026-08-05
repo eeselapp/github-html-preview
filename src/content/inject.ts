@@ -14,6 +14,15 @@ export interface PreviewTarget {
   codeRegion: HTMLElement | null;
 }
 
+export interface PullRequestPreviewTarget {
+  /** Raw URL for this revision of the changed HTML file. */
+  rawUrl: string;
+  /** The revision-pinned file-header link used to resolve the raw URL. */
+  fileAnchor: HTMLAnchorElement;
+  /** GitHub's visible action row, where the Preview button should be mounted. */
+  actionContainer: HTMLElement;
+}
+
 // Pre-filter to anchors that *look* like raw links before the precise check,
 // so we don't scan every <a> on the page — this runs on each sync() (every
 // animation frame while the page mutates).
@@ -61,9 +70,93 @@ export function detectPrimaryTarget(doc: Document, href: string): PreviewTarget 
     const rawUrl = rawAnchor?.href ?? blobToRawUrl(href);
     if (rawUrl) return { rawUrl, rawAnchor, codeRegion: findCodeRegion(doc, rawAnchor) };
   }
-  const rawAnchor = findRawAnchor(doc);
-  if (rawAnchor) return { rawUrl: rawAnchor.href, rawAnchor, codeRegion: findCodeRegion(doc, rawAnchor) };
+  // A page-wide raw-link fallback is only valid for gist pages. PR diffs can
+  // contain many Raw links; treating the first one as the page's primary file
+  // would replace the entire diff with a single inline preview.
+  let hostname = '';
+  try {
+    hostname = new URL(href).hostname;
+  }
+  catch {}
+  if (hostname === 'gist.github.com') {
+    const rawAnchor = findRawAnchor(doc);
+    if (rawAnchor) {
+      return { rawUrl: rawAnchor.href, rawAnchor, codeRegion: findCodeRegion(doc, rawAnchor) };
+    }
+  }
   return null;
+}
+
+function isPullRequestFilesPage(href: string): boolean {
+  try {
+    const url = new URL(href);
+    return (
+      url.hostname === 'github.com' &&
+      /^\/[^/]+\/[^/]+\/pull\/\d+\/(?:files|changes)\/?$/.test(url.pathname)
+    );
+  }
+  catch {
+    return false;
+  }
+}
+
+const DIFF_CONTAINER_SELECTOR = [
+  '.js-file',
+  '[data-file-path]',
+  '[data-path]',
+  '[data-testid="file-diff"]',
+  '[data-testid="diff-file"]',
+  '[class*="DiffFile"]',
+  '[class*="diff-file"]',
+  'copilot-diff-entry',
+].join(', ');
+
+const DIFF_HEADER_SELECTOR = [
+  '.file-header',
+  '.js-file-header',
+  '[data-testid="file-header"]',
+  '[class*="DiffFileHeader"]',
+  '[class*="diff-file-header"]',
+].join(', ');
+
+/**
+ * Find changed HTML files on a PR's Files changed/Changes tab. GitHub includes
+ * a revision-pinned `/blob/<head sha>/<path>` link in each file header; turning
+ * that into `/raw/` avoids an API call and previews the exact revision shown in
+ * the diff (including private repositories).
+ */
+export function findPullRequestHtmlTargets(
+  doc: Document,
+  href: string
+): PullRequestPreviewTarget[] {
+  if (!isPullRequestFilesPage(href)) return [];
+
+  const byRawUrl = new Map<string, PullRequestPreviewTarget>();
+  for (const fileAnchor of doc.querySelectorAll<HTMLAnchorElement>('a[href*="/blob/"]')) {
+    if (!isHtmlPath(fileAnchor.href)) continue;
+    const rawUrl = blobToRawUrl(fileAnchor.href);
+    if (!rawUrl) continue;
+
+    // Only accept blob links belonging to a bounded diff/header. This avoids
+    // adding buttons to HTML links in PR descriptions, comments, or code text.
+    const diffContainer = fileAnchor.closest<HTMLElement>(DIFF_CONTAINER_SELECTOR);
+    const diffHeader = fileAnchor.closest<HTMLElement>(DIFF_HEADER_SELECTOR);
+    if (!diffContainer && !diffHeader) continue;
+
+    const header = diffHeader ?? diffContainer?.querySelector<HTMLElement>(DIFF_HEADER_SELECTOR);
+    const actionContainer =
+      header?.querySelector<HTMLElement>('.file-actions > .d-flex') ??
+      header?.querySelector<HTMLElement>(
+        '.file-actions, [data-testid="file-header-actions"], [class*="FileHeader"][class*="actions"]'
+      ) ??
+      fileAnchor.parentElement;
+    if (!actionContainer) continue;
+
+    if (!byRawUrl.has(rawUrl)) {
+      byRawUrl.set(rawUrl, { rawUrl, fileAnchor, actionContainer });
+    }
+  }
+  return [...byRawUrl.values()];
 }
 
 function containsElement(root: Element, child: Element): boolean {

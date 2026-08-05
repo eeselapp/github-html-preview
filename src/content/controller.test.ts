@@ -5,6 +5,7 @@ const BTN = 'eesel-ghp-preview-btn';
 const OVERLAY = 'eesel-ghp-overlay';
 const PANEL = 'eesel-ghp-panel';
 const PANEL_FRAME = 'eesel-ghp-panel-frame';
+const PR_BTN = '.eesel-ghp-pr-preview-btn';
 
 const HTML_PAGE = `
   <div id="actions">
@@ -89,6 +90,65 @@ describe('button injection', () => {
     );
     controller.sync();
     expect(present(BTN)).toBe(false);
+  });
+});
+
+describe('pull request diff buttons', () => {
+  const PR_PAGE = `
+    <div class="js-file">
+      <div class="file-header">
+        <a id="plan-file" href="https://github.com/o/r/blob/head-sha/yolo/plan.html">yolo/plan.html</a>
+        <div class="file-actions"><div class="d-flex" id="plan-actions"></div></div>
+      </div>
+    </div>
+    <div data-file-path="yolo/verify.html">
+      <div data-testid="file-header">
+        <a href="https://github.com/o/r/blob/head-sha/yolo/verify.html">yolo/verify.html</a>
+      </div>
+    </div>
+    <div class="js-file">
+      <div class="file-header">
+        <a href="https://github.com/o/r/blob/head-sha/src/app.ts">src/app.ts</a>
+      </div>
+    </div>
+  `;
+
+  it('adds one Preview button to every changed HTML file', () => {
+    const { controller } = setup(PR_PAGE, 'https://github.com/o/r/pull/42/changes#diff-abc');
+    controller.sync();
+    controller.sync();
+
+    const buttons = document.querySelectorAll<HTMLButtonElement>(PR_BTN);
+    expect(buttons).toHaveLength(2);
+    expect([...buttons].map((button) => button.textContent)).toEqual(['Preview', 'Preview']);
+    expect(buttons[0].parentElement?.id).toBe('plan-actions');
+    expect(present(BTN)).toBe(false);
+  });
+
+  it('opens the selected changed file in a floating popup without changing the PR URL', () => {
+    const { controller, getHref } = setup(
+      PR_PAGE,
+      'https://github.com/o/r/pull/42/changes#diff-abc'
+    );
+    controller.sync();
+    document.querySelector<HTMLButtonElement>(PR_BTN)?.click();
+
+    expect(panelFrame()?.dataset.rawUrl).toBe(
+      'https://github.com/o/r/raw/head-sha/yolo/plan.html'
+    );
+    expect(document.getElementById(PANEL)?.dataset.eeselPresentation).toBe('floating');
+    expect(present('eesel-ghp-floating-backdrop')).toBe(true);
+    expect(getHref()).toBe('https://github.com/o/r/pull/42/changes#diff-abc');
+  });
+
+  it('removes diff buttons after navigating away from the PR files page', () => {
+    const { controller, setHref } = setup(PR_PAGE, 'https://github.com/o/r/pull/42/files');
+    controller.sync();
+    expect(document.querySelectorAll(PR_BTN)).toHaveLength(2);
+
+    setHref('https://github.com/o/r/pull/42');
+    controller.sync();
+    expect(document.querySelectorAll(PR_BTN)).toHaveLength(0);
   });
 });
 

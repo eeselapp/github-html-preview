@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { detectPrimaryTarget, findCodeRegion } from './inject';
+import { detectPrimaryTarget, findCodeRegion, findPullRequestHtmlTargets } from './inject';
 
 function docWith(html: string): Document {
   document.body.innerHTML = html;
@@ -57,6 +57,61 @@ describe('detectPrimaryTarget', () => {
     );
     const t = detectPrimaryTarget(doc, 'https://gist.github.com/u/abc');
     expect(t?.rawAnchor?.id).toBe('graw');
+  });
+
+  it('does not treat the first HTML Raw link in a PR diff as a primary page target', () => {
+    const doc = docWith(
+      '<a href="https://github.com/o/r/raw/head-sha/changed.html">Raw</a>'
+    );
+    expect(
+      detectPrimaryTarget(doc, 'https://github.com/o/r/pull/42/changes')
+    ).toBeNull();
+  });
+});
+
+describe('findPullRequestHtmlTargets', () => {
+  it('finds and deduplicates revision-pinned HTML blob links in diff headers', () => {
+    const doc = docWith(`
+      <div class="js-file">
+        <div class="file-header">
+          <a id="plan" href="https://github.com/o/r/blob/head-sha/plans/plan.html">plan.html</a>
+          <a href="https://github.com/o/r/blob/head-sha/plans/plan.html">View file</a>
+          <div class="file-actions"><div class="d-flex" id="plan-actions"></div></div>
+        </div>
+      </div>
+      <div data-file-path="notes/readme.htm">
+        <div data-testid="file-header">
+          <a id="notes" href="https://github.com/o/r/blob/head-sha/notes/readme.htm">readme.htm</a>
+        </div>
+      </div>
+      <div class="js-file">
+        <div class="file-header">
+          <a href="https://github.com/o/r/blob/head-sha/src/app.ts">app.ts</a>
+        </div>
+      </div>
+      <p><a href="https://github.com/o/r/blob/head-sha/comment-link.html">comment link</a></p>
+    `);
+
+    const targets = findPullRequestHtmlTargets(
+      doc,
+      'https://github.com/o/r/pull/42/changes#diff-abc'
+    );
+    expect(targets.map(({ rawUrl }) => rawUrl)).toEqual([
+      'https://github.com/o/r/raw/head-sha/plans/plan.html',
+      'https://github.com/o/r/raw/head-sha/notes/readme.htm',
+    ]);
+    expect(targets.map(({ fileAnchor }) => fileAnchor.id)).toEqual(['plan', 'notes']);
+    expect(targets[0].actionContainer.id).toBe('plan-actions');
+  });
+
+  it('supports GitHub files routes and ignores non-PR pages', () => {
+    const doc = docWith(`
+      <div class="js-file file-header">
+        <a href="https://github.com/o/r/blob/sha/page.html">page.html</a>
+      </div>
+    `);
+    expect(findPullRequestHtmlTargets(doc, 'https://github.com/o/r/pull/42/files')).toHaveLength(1);
+    expect(findPullRequestHtmlTargets(doc, 'https://github.com/o/r/issues/42')).toEqual([]);
   });
 });
 
