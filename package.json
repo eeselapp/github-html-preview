@@ -1,7 +1,7 @@
 {
   "name": "github-html-preview",
   "type": "module",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "private": true,
   "description": "Chrome extension that adds a one-click Preview for .html files on GitHub.",
   "repository": {

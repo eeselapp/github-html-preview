@@ -45,9 +45,23 @@ jobs:
       - name: Build extension
         run: npm run build
 
+      - name: Read release notes from changelog
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const tag = process.env.GITHUB_REF_NAME;
+          const version = tag.slice(1);
+          const changelog = readFileSync('CHANGELOG.md', 'utf8');
+          const section = changelog.split(/^## /m).find(block => block.startsWith(`[${version}] - `));
+          if (!section) throw new Error(`Missing changelog entry for ${tag}`);
+          const notes = section.slice(section.indexOf('\n') + 1).trim();
+          const link = `https://github.com/${process.env.GITHUB_REPOSITORY}/blob/${tag}/CHANGELOG.md`;
+          writeFileSync('release-notes.md', `${notes}\n\n[Full changelog](${link})\n`);
+          NODE
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
+          name: GitHub HTML Preview ${{ github.ref_name }}
+          body_path: release-notes.md
           files: release/crx-github-html-preview-*.zip

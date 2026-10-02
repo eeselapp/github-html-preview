@@ -2,7 +2,7 @@
 
 All notable changes to GitHub HTML Preview are documented here.
 
-## Unreleased
+## [1.5.1] - 2026-10-02
 
 ### Fixed
 
@@ -61,5 +61,6 @@ All notable changes to GitHub HTML Preview are documented here.
 
 - Initial release of the GitHub HTML Preview Chrome extension.
 
+[1.5.1]: https://github.com/eeselapp/github-html-preview/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/eeselapp/github-html-preview/compare/v1.0.0...v1.5.0
 [1.0.0]: https://github.com/eeselapp/github-html-preview/releases/tag/v1.0.0
