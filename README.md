@@ -7,9 +7,10 @@ fullscreen), without downloading the file or pasting it into a third-party proxy
 We commit HTML artifacts constantly (design mockups, `yolo/<KEY>/plan.html`
 specs, generated reports). GitHub shows them as source. This renders them.
 
-- **Nothing leaves to a third party** — no proxy, no analytics. The extension's
-  only network call is fetching the file you're looking at, with your own GitHub
-  session (so **private repos and gists work**); it's rendered locally. (The
+- **Nothing leaves to a third party** — no proxy, no analytics. The extension
+  fetches the file you're looking at and its embedded repository/gist images
+  with your own GitHub session (so **private repos and gists work**); they're
+  rendered locally. (The
   rendered artifact itself runs with normal browser network access, exactly as it
   would if you opened the file locally — the sandbox isolates your *session*, not
   the artifact's own outbound requests.)
@@ -55,6 +56,12 @@ an in-flow panel that sets the `#htmlpreview` fragment. The panel:
   and the extension downloads and renders the complete HTML without a size cap.
 - **Refreshes on navigation** — when you move file-to-file with the panel open, it
   re-points at the new file instead of leaving the previous artifact showing.
+- **Resolves embedded images** — relative paths use the HTML file's location,
+  including slashed branch names and authored `<base>` URLs. Repository/gist
+  images in `<img>` and `<picture>` (including `srcset`) are fetched before
+  rendering and embedded as data URLs, so private images load without granting
+  the artifact access to your GitHub session. The cached preview retains them
+  when switching between inline and fullscreen.
 - **Toggles fullscreen** — a **Fullscreen** button in the toolbar expands it to a
   full-page overlay (`#htmlpreview-fullscreen`); the overlay navbar's **Exit
   fullscreen** button drops it back to the panel.

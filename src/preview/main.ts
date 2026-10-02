@@ -12,6 +12,7 @@ import {
   SET_MODE_MESSAGE,
 } from '@/lib/messages';
 import { loadArtifact } from './fetch-artifact';
+import { prepareArtifact } from './prepare-artifact';
 
 // The privileged preview page. Reads ?src=<raw url>, fetches it WITH the user's
 // session, then hands the text to the sandbox page for rendering. It's embedded
@@ -220,21 +221,19 @@ async function main(): Promise<void> {
     document.body.prepend(buildNavbar(filename, resolveTheme(themeParam)));
   }
 
-  const cached = src ? await getCachedArtifact(src) : null;
-  if (cached !== null) {
-    updateArtifactTitle(cached, filename, src);
-    renderInSandbox(cached);
-    return;
+  let html = src ? await getCachedArtifact(src) : null;
+  if (html === null) {
+    const result = await loadArtifact(src);
+    if (!result.ok) {
+      showStatus(result.title, result.detail);
+      return;
+    }
+    html = result.html;
   }
-
-  const result = await loadArtifact(src);
-  if (!result.ok) {
-    showStatus(result.title, result.detail);
-    return;
-  }
-  if (src) cacheArtifact(src, result.html);
-  updateArtifactTitle(result.html, filename, src);
-  renderInSandbox(result.html);
+  const prepared = src ? await prepareArtifact(html, src) : html;
+  if (src) cacheArtifact(src, prepared);
+  updateArtifactTitle(html, filename, src);
+  renderInSandbox(prepared);
 }
 
 void main();
