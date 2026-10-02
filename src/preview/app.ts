@@ -18,7 +18,9 @@ import type { ArtifactRenderer, ExtensionResources } from '@/platform/extension'
 // fullscreen navbar's close button asks the content script — via postMessage —
 // to remove the overlay, revealing the GitHub page.
 
-const CACHE_RESPONSE_TIMEOUT_MS = 50;
+// Prepared artifacts include embedded images, so their structured clone can
+// take more than one frame across processes. Cache misses still reply at once.
+const CACHE_RESPONSE_TIMEOUT_MS = 1_000;
 
 /** Ask the embedding content script for this tab's last artifact. Standalone
  * preview pages have no content-script parent, so fall through quickly. */

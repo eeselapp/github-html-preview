@@ -24,6 +24,7 @@ beforeEach(() => {
 afterEach(() => {
   application?.dispose();
   application = undefined;
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -63,6 +64,29 @@ describe('browser-neutral preview application', () => {
     expect(deps.loadArtifact).not.toHaveBeenCalled();
     expect(deps.prepareArtifact).not.toHaveBeenCalled();
     expect(render).toHaveBeenCalledWith('<h1>Cached</h1>', expect.any(Function));
+  });
+
+  it('waits for a prepared cache reply delayed by cross-process cloning', async () => {
+    vi.useFakeTimers();
+    const deps = services();
+    const render = vi.fn(() => vi.fn());
+    const parent = { postMessage: vi.fn() } as unknown as Window;
+    vi.spyOn(window, 'parent', 'get').mockReturnValue(parent);
+    history.replaceState(null, '', `/?src=${encodeURIComponent(SRC)}&parentOrigin=https%3A%2F%2Fgithub.com`);
+    parent.postMessage = vi.fn((data) => {
+      if (data.type !== CACHE_GET_MESSAGE) return;
+      setTimeout(() => window.dispatchEvent(new MessageEvent('message', {
+        source: parent, origin: 'https://github.com',
+        data: { type: CACHE_RESULT_MESSAGE, src: SRC, html: '<h1>Prepared report</h1>' },
+      })), 75);
+    });
+    application = startPreview(resources, render, deps);
+    await vi.advanceTimersByTimeAsync(75);
+    await application.ready;
+    expect(deps.loadArtifact).not.toHaveBeenCalled();
+    expect(deps.prepareArtifact).not.toHaveBeenCalled();
+    expect(render).toHaveBeenCalledWith('<h1>Prepared report</h1>', expect.any(Function));
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('rejects an untrusted explicit parent origin and an invalid cached source', async () => {
