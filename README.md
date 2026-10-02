@@ -14,7 +14,7 @@ specs, generated reports). GitHub shows them as source. This renders them.
   rendered artifact itself runs with normal browser network access, exactly as it
   would if you opened the file locally — the sandbox isolates your *session*, not
   the artifact's own outbound requests.)
-- **Sandboxed** — the artifact runs in a nested `sandbox="allow-scripts"` iframe
+- **Sandboxed** — the artifact runs in a nested sandboxed iframe
   at an opaque origin (no `allow-same-origin`). Its scripts run (charts,
   interactivity) but it **cannot read your GitHub session** or any extension API.
 
@@ -61,7 +61,10 @@ an in-flow panel that sets the `#htmlpreview` fragment. The panel:
   images in `<img>` and `<picture>` (including `srcset`) are fetched before
   rendering and embedded as data URLs, so private images load without granting
   the artifact access to your GitHub session. The cached preview retains them
-  when switching between inline and fullscreen.
+  when switching between inline and fullscreen. Preparation downloads at most
+  20 MiB per image and 100 MiB total, limits data URL expansion to approximately
+  134 MiB, and finishes within 30 seconds. Missing, oversized, or timed-out
+  images keep their absolute source URLs while the rest of the artifact renders.
 - **Toggles fullscreen** — a **Fullscreen** button in the toolbar expands it to a
   full-page overlay (`#htmlpreview-fullscreen`); the overlay navbar's **Exit
   fullscreen** button drops it back to the panel.
@@ -108,7 +111,7 @@ compatibility remain work described in [the Firefox plan](docs/firefox-support.m
 
 ## Develop
 
-Built with Vite + CRXJS. Requires Node 20+.
+Built with Vite + CRXJS. Use Node 24 or newer.
 
 ```bash
 npm install

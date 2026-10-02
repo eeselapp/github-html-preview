@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   blobToRawUrl,
+  isAllowedArtifactResponseUrl,
   isAllowedPreviewSrc,
   isHtmlPath,
   isRawFileUrl,
@@ -73,6 +74,7 @@ describe('isRawFileUrl', () => {
   it('matches the raw content hosts and the github raw route', () => {
     expect(isRawFileUrl('https://raw.githubusercontent.com/o/r/main/x.html')).toBe(true);
     expect(isRawFileUrl('https://gist.githubusercontent.com/u/id/raw/sha/file.html')).toBe(true);
+    expect(isRawFileUrl('https://gist.github.com/u/id/raw/sha/file.html')).toBe(true);
     expect(isRawFileUrl('https://github.com/o/r/raw/main/x.html')).toBe(true);
   });
 
@@ -93,8 +95,10 @@ describe('urlFilename', () => {
 describe('isAllowedPreviewSrc', () => {
   it('allows actual raw URLs over https', () => {
     expect(isAllowedPreviewSrc('https://github.com/o/r/raw/main/x.html')).toBe(true);
+    expect(isAllowedPreviewSrc('https://github.com:443/o/r/raw/main/x.html')).toBe(true);
     expect(isAllowedPreviewSrc('https://raw.githubusercontent.com/o/r/main/x.html')).toBe(true);
     expect(isAllowedPreviewSrc('https://gist.githubusercontent.com/u/id/raw/sha/f.html')).toBe(true);
+    expect(isAllowedPreviewSrc('https://gist.github.com/u/id/raw/sha/f.html')).toBe(true);
   });
 
   it('rejects non-raw github paths, other origins, and non-https — not an open fetcher', () => {
@@ -107,5 +111,42 @@ describe('isAllowedPreviewSrc', () => {
     expect(isAllowedPreviewSrc('file:///etc/passwd')).toBe(false);
     expect(isAllowedPreviewSrc('javascript:alert(1)')).toBe(false);
     expect(isAllowedPreviewSrc('not a url')).toBe(false);
+  });
+
+  it.each([
+    'https://github.com/settings/raw/profile',
+    'https://avatars.githubusercontent.com/u/123',
+    'https://evil.githubusercontent.com/o/r/main/x.html',
+    'https://githubusercontent.com/o/r/main/x.html',
+    'https://objects.githubusercontent.com/github-production-repository-file-5c1aeb/report',
+    'https://raw.githubusercontent.com/only-one-segment',
+    'https://github.com:8443/o/r/raw/main/x.html',
+    'https://user:secret@github.com/o/r/raw/main/x.html',
+  ])('rejects ambiguous raw paths and unsafe authority components: %s', href => {
+    expect(isAllowedPreviewSrc(href)).toBe(false);
+  });
+});
+
+describe('isAllowedArtifactResponseUrl', () => {
+  it.each([
+    'https://raw.githubusercontent.com/o/r/main/page.html?token=signed',
+    'https://gist.githubusercontent.com/u/id/raw/sha/page.html',
+    'https://gist.github.com/u/id/raw/sha/page.html',
+    'https://objects.githubusercontent.com/github-production-repository-file-5c1aeb/report?token=signed',
+    'https://media.githubusercontent.com/media/o/r/main/shot.png',
+  ])('accepts GitHub raw/download redirect targets: %s', href => {
+    expect(isAllowedArtifactResponseUrl(href)).toBe(true);
+  });
+
+  it.each([
+    'https://github.com/login',
+    'https://github.com/settings/profile',
+    'https://objects.githubusercontent.com/arbitrary-path',
+    'https://media.githubusercontent.com/arbitrary-path',
+    'https://example.com/page.html',
+    'http://raw.githubusercontent.com/o/r/main/page.html',
+    'https://user:secret@raw.githubusercontent.com/o/r/main/page.html',
+  ])('rejects unexpected redirect targets: %s', href => {
+    expect(isAllowedArtifactResponseUrl(href)).toBe(false);
   });
 });

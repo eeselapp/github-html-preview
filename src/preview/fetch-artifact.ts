@@ -1,4 +1,4 @@
-import { isAllowedPreviewSrc } from '@/lib/github';
+import { isAllowedArtifactResponseUrl, isAllowedPreviewSrc } from '@/lib/github';
 
 // Large generated artifacts can be tens of megabytes even though GitHub's blob
 // view refuses to render them. Give the raw download enough time to complete.
@@ -39,38 +39,45 @@ export async function loadArtifact(
 
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
-  let res: Response;
   try {
-    res = await fetchImpl(src, { credentials: 'include', redirect: 'follow', signal: abort.signal });
-  }
- catch {
+    const res = await fetchImpl(src, { credentials: 'include', redirect: 'follow', signal: abort.signal });
+    if (res.url && !isAllowedArtifactResponseUrl(res.url)) {
+      abort.abort();
+      return {
+        ok: false,
+        title: 'Couldn’t load the file',
+        detail: 'GitHub redirected this file to an unsupported location.',
+      };
+    }
+
+    if (!res.ok) {
+      abort.abort();
+      return {
+        ok: false,
+        title: 'Couldn’t load the file',
+        detail: `GitHub returned ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`,
+      };
+    }
+
+    const contentType = res.headers.get('content-type') ?? '';
+    if (looksBinary(contentType)) {
+      abort.abort();
+      return {
+        ok: false,
+        title: 'Can’t preview this file',
+        detail: `This looks like ${contentType.split(';')[0].trim()}, not an HTML page.`,
+      };
+    }
+
+    return { ok: true, html: await res.text() };
+  } catch {
     return {
       ok: false,
       title: 'Couldn’t load the file',
       detail: 'The request failed or timed out. If this is a private repo or gist, make sure you’re signed in to GitHub.',
     };
-  }
- finally {
+  } finally {
+    // Fetch resolves at the response headers; body reads must share the timeout.
     clearTimeout(timer);
   }
-
-  if (!res.ok) {
-    return {
-      ok: false,
-      title: 'Couldn’t load the file',
-      detail: `GitHub returned ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`,
-    };
-  }
-
-  const contentType = res.headers.get('content-type') ?? '';
-  if (looksBinary(contentType)) {
-    return {
-      ok: false,
-      title: 'Can’t preview this file',
-      detail: `This looks like ${contentType.split(';')[0].trim()}, not an HTML page.`,
-    };
-  }
-
-  const text = await res.text();
-  return { ok: true, html: text };
 }

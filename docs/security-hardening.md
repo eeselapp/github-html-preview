@@ -84,6 +84,23 @@ useful as a user-selected safe mode.
 
 ## Implementation work
 
+### Current foundation
+
+Privileged fetching now checks initial raw-file routes and expected final
+GitHub download hosts, and keeps the HTML timeout active through the body read.
+Embedded `img`/`picture` resources are resolved against the artifact URL and
+fetched only within its repository or gist. Image downloads are streamed with
+20 MiB per-image and 100 MiB aggregate limits, a 30-second preparation deadline,
+and a separate bound on inserted data URLs. Complete HTML artifacts remain
+uncapped to support GitHub's oversized-file surface.
+
+Content/preview control, cache, and title messages now use exact GitHub or
+extension target origins and validate the active frame and source URL. The
+manifest sandbox handshake still uses `'*'` for its opaque origin, restricted
+to the frame created by the renderer. Chromium regression fixtures cover
+authenticated image decoding, passive resource request origins, and cookie/API
+isolation. The profiles and capability changes below remain planned work.
+
 ### 1. Reduce sandbox capabilities
 
 Change the nested iframe in `src/sandbox/index.html` from
@@ -181,4 +198,3 @@ for interactivity.
 - Whether connected mode permits arbitrary destinations or a user-visible
   allowlist.
 - The maximum artifact size and behavior for oversized documents.
-

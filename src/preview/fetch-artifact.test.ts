@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadArtifact } from './fetch-artifact';
 
 const SRC = 'https://github.com/o/r/raw/main/x.html';
+
+afterEach(() => vi.useRealTimers());
 
 function stubFetch(out: Response | Error): typeof fetch {
   return vi.fn(async () => {
@@ -49,6 +51,48 @@ describe('loadArtifact', () => {
     const r = await loadArtifact(SRC, stubFetch(new TypeError('boom')));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.title).toMatch(/load/i);
+  });
+
+  it('surfaces a response-body failure instead of rejecting the preview', async () => {
+    const response = new Response('html');
+    vi.spyOn(response, 'text').mockRejectedValue(new TypeError('connection reset'));
+    const r = await loadArtifact(SRC, stubFetch(response));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.title).toMatch(/load/i);
+  });
+
+  it('keeps the timeout active while receiving a stalled response body', async () => {
+    vi.useFakeTimers();
+    const f = vi.fn<typeof fetch>(async (_url, options) => {
+      const response = new Response('html');
+      vi.spyOn(response, 'text').mockImplementation(() => new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      }));
+      return response;
+    });
+    const pending = loadArtifact(SRC, f);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const r = await pending;
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.detail).toMatch(/timed out/);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects a non-raw redirect before reading its body', async () => {
+    const response = new Response('profile');
+    Object.defineProperty(response, 'url', { value: 'https://github.com/settings/profile' });
+    const read = vi.spyOn(response, 'text');
+    const r = await loadArtifact(SRC, stubFetch(response));
+    expect(r.ok).toBe(false);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('accepts a signed GitHub download redirect', async () => {
+    const response = new Response('<h1>Report</h1>');
+    Object.defineProperty(response, 'url', {
+      value: 'https://objects.githubusercontent.com/github-production-repository-file-5c1aeb/report?token=signed',
+    });
+    expect(await loadArtifact(SRC, stubFetch(response))).toEqual({ ok: true, html: '<h1>Report</h1>' });
   });
 
   it('surfaces an HTTP error status', async () => {

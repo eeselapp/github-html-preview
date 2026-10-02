@@ -64,6 +64,16 @@ describe('detectPrimaryTarget', () => {
     expect(t?.rawAnchor?.id).toBe('graw');
   });
 
+  it('recognizes the current gist.github.com Raw link beside an HTML file', () => {
+    const rawUrl = 'https://gist.github.com/paulirish/e412522baff1e164b3dd1c679f2f0845/raw/294b2f506f18950beb8e20a1a8f17300637b7461/index.html';
+    const doc = docWith(`<div class="file-header"><a id="graw" href="${rawUrl}">Raw</a><a href="#file-index-html">index.html</a></div>`);
+
+    const target = detectPrimaryTarget(doc, 'https://gist.github.com/paulirish/e412522baff1e164b3dd1c679f2f0845');
+
+    expect(target?.rawUrl).toBe(rawUrl);
+    expect(target?.rawAnchor?.id).toBe('graw');
+  });
+
   it('does not treat the first HTML Raw link in a PR diff as a primary page target', () => {
     const doc = docWith(
       '<a href="https://github.com/o/r/raw/head-sha/changed.html">Raw</a>'

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareArtifact } from './prepare-artifact';
 
 const SRC = 'https://github.com/eeselapp/slack/raw/rama-adi/feature/yolo/ENG-6010/verify.html';
@@ -7,6 +7,8 @@ const DATA = 'data:image/png;base64,AQID';
 const parse = (html: string) => new DOMParser().parseFromString(html, 'text/html');
 const imageFetch = () => vi.fn<typeof fetch>(async () =>
   new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }));
+
+afterEach(() => vi.useRealTimers());
 
 describe('prepareArtifact', () => {
   it('resolves the reported relative screenshot path and embeds it with session credentials', async () => {
@@ -46,6 +48,33 @@ describe('prepareArtifact', () => {
     expect(doc.querySelector('base')?.getAttribute('target')).toBe('_blank');
   });
 
+  it('preserves the target order of authored base elements', async () => {
+    const doc = parse(await prepareArtifact(
+      '<base target="_self"><base href="verify/" target="_blank"><img src="shot.png">', SRC, imageFetch(),
+    ));
+    expect([...doc.querySelectorAll('base')].map(base => base.getAttribute('target'))).toEqual(['_self', '_blank']);
+  });
+
+  it.each([SRC, SRC.replace('github.com/', 'github.com:443/') + '#report'])('keeps fragment links local for an authored same-document base: %s', async src => {
+    const doc = parse(await prepareArtifact('<base href=""><a href="#evidence">Evidence</a>', src, imageFetch()));
+    expect(doc.querySelector('a')?.getAttribute('href')).toBe('about:srcdoc#evidence');
+  });
+
+  it('preserves SVG view fragments while downloading the file only once', async () => {
+    const fetchImpl = imageFetch();
+    const doc = parse(await prepareArtifact('<img src="sheet.svg#first"><img src="sheet.svg#second">', SRC, fetchImpl));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe(SRC.replace('verify.html', 'sheet.svg'));
+    expect([...doc.querySelectorAll('img')].map(img => img.getAttribute('src'))).toEqual([DATA + '#first', DATA + '#second']);
+  });
+
+  it('recognizes the same GitHub repository regardless of owner/repository casing', async () => {
+    const fetchImpl = imageFetch();
+    const doc = parse(await prepareArtifact('<img src="https://raw.githubusercontent.com/EeselApp/Slack/main/shot.png">', SRC, fetchImpl));
+    expect(fetchImpl.mock.calls[0][0]).toBe('https://github.com/EeselApp/Slack/raw/main/shot.png');
+    expect(doc.querySelector('img')?.getAttribute('src')).toBe(DATA);
+  });
+
   it('embeds img and picture srcset candidates while preserving descriptors and data URL commas', async () => {
     const fetchImpl = imageFetch();
     const doc = parse(await prepareArtifact(
@@ -74,11 +103,23 @@ describe('prepareArtifact', () => {
     expect(doc.querySelector('img')?.getAttribute('src')).toBe('https://cdn.example.com/assets/shot.png');
   });
 
-  it('supports sibling gist images at the same revision', async () => {
+  it.each(['gist.github.com', 'gist.githubusercontent.com'])('supports authenticated sibling gist images from %s', async host => {
     const fetchImpl = imageFetch();
-    const src = 'https://gist.githubusercontent.com/user/gist-id/raw/revision/page.html';
-    await prepareArtifact('<img src="shot.png">', src, fetchImpl);
-    expect(fetchImpl.mock.calls[0][0]).toBe(src.replace('page.html', 'shot.png'));
+    const src = `https://${host}/user/gist-id/raw/revision/page.html`;
+    const doc = parse(await prepareArtifact('<img src="shot.png">', src, fetchImpl));
+    expect(fetchImpl.mock.calls[0][0]).toBe('https://gist.github.com/user/gist-id/raw/revision/shot.png');
+    expect(doc.querySelector('base')?.getAttribute('href')).toBe(src);
+    expect(doc.querySelector('img')?.getAttribute('src')).toBe(DATA);
+  });
+
+  it('recognizes same-gist images across GitHub/raw hosts and rejects other gists', async () => {
+    const fetchImpl = imageFetch();
+    const src = 'https://gist.github.com/User/gist-id/raw/revision/page.html';
+    const same = 'https://gist.githubusercontent.com/user/gist-id/raw/revision/shot.png';
+    const other = 'https://gist.githubusercontent.com/user/other-id/raw/revision/shot.png';
+    const doc = parse(await prepareArtifact(`<img src="${same}"><img src="${other}">`, src, fetchImpl));
+    expect(fetchImpl).toHaveBeenCalledExactlyOnceWith('https://gist.github.com/user/gist-id/raw/revision/shot.png', expect.any(Object));
+    expect([...doc.querySelectorAll('img')].map(img => img.getAttribute('src'))).toEqual([DATA, other]);
   });
 
   it.each(['network', 'missing', 'not-image'])('still renders the document when an image is %s', async failure => {
@@ -90,6 +131,82 @@ describe('prepareArtifact', () => {
     const doc = parse(await prepareArtifact('<h1>Report</h1><img src="verify/ac7-outline-inset-full.png">', SRC, fetchImpl));
     expect(doc.querySelector('h1')?.textContent).toBe('Report');
     expect(doc.querySelector('img')?.getAttribute('src')).toBe(IMAGE);
+  });
+
+  it('rejects unsupported final redirect locations without reading image bytes', async () => {
+    const response = new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } });
+    Object.defineProperty(response, 'url', { value: 'https://github.com/settings/profile' });
+    const read = vi.spyOn(response.body!, 'getReader');
+    const doc = parse(await prepareArtifact('<img src="shot.png">', SRC, vi.fn(async () => response)));
+    expect(read).not.toHaveBeenCalled();
+    expect(doc.querySelector('img')?.getAttribute('src')).toBe(SRC.replace('verify.html', 'shot.png'));
+  });
+
+  it('rejects an oversized declared image without reading the response body', async () => {
+    const response = new Response(new Uint8Array([1, 2, 3]), {
+      headers: { 'content-type': 'image/png', 'content-length': '21' },
+    });
+    const read = vi.spyOn(response.body!, 'getReader');
+    const doc = parse(await prepareArtifact('<h1>Report</h1><img src="shot.png">', SRC, vi.fn(async () => response), {
+      maxImageBytes: 20, maxTotalImageBytes: 100, timeoutMs: 1000,
+    }));
+    expect(read).not.toHaveBeenCalled();
+    expect(doc.querySelector('h1')?.textContent).toBe('Report');
+    expect(doc.querySelector('img')?.getAttribute('src')).toBe(SRC.replace('verify.html', 'shot.png'));
+  });
+
+  it('enforces the streamed image limit when Content-Length is missing or incorrect', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]));
+        controller.enqueue(new Uint8Array([3, 4]));
+        controller.close();
+      },
+    }), { headers: { 'content-type': 'image/png', 'content-length': '1' } }));
+    const doc = parse(await prepareArtifact('<img src="shot.png">', SRC, fetchImpl, {
+      maxImageBytes: 3, maxTotalImageBytes: 100, timeoutMs: 1000,
+    }));
+    expect(doc.querySelector('img')?.getAttribute('src')).toBe(SRC.replace('verify.html', 'shot.png'));
+  });
+
+  it('shares the total byte budget between concurrent images and stops pending downloads', async () => {
+    const fetchImpl = imageFetch();
+    const images = Array.from({ length: 10 }, (_, i) => `<img src="${i}.png">`).join('');
+    const doc = parse(await prepareArtifact(images, SRC, fetchImpl, {
+      maxImageBytes: 10, maxTotalImageBytes: 5, timeoutMs: 1000,
+    }));
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    const embedded = [...doc.querySelectorAll('img')].filter(img => img.getAttribute('src')?.startsWith('data:'));
+    expect(embedded.length).toBeLessThanOrEqual(1);
+    expect(doc.querySelectorAll('img')).toHaveLength(10);
+  });
+
+  it('bounds serialized HTML growth when one downloaded image is referenced repeatedly', async () => {
+    const fetchImpl = imageFetch();
+    const doc = parse(await prepareArtifact('<img src="shot.png">'.repeat(10), SRC, fetchImpl, {
+      maxImageBytes: 10, maxTotalImageBytes: 6, timeoutMs: 1000,
+    }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const sources = [...doc.querySelectorAll('img')].map(img => img.getAttribute('src'));
+    expect(sources.filter(src => src === DATA)).toHaveLength(2);
+    expect(sources.slice(2)).toEqual(Array(8).fill(SRC.replace('verify.html', 'shot.png')));
+  });
+
+  it('applies one overall deadline across image batches and retains the report on timeout', async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn<typeof fetch>(async (_url, options) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    }));
+    const images = Array.from({ length: 10 }, (_, i) => `<img src="${i}.png">`).join('');
+    const pending = prepareArtifact('<h1>Report</h1>' + images, SRC, fetchImpl, {
+      maxImageBytes: 10, maxTotalImageBytes: 100, timeoutMs: 50,
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    const doc = parse(await pending);
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(doc.querySelector('h1')?.textContent).toBe('Report');
+    expect(doc.querySelectorAll('img')).toHaveLength(10);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('preserves scripts and document mode, with an early base and local fragment links', async () => {
