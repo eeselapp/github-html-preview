@@ -2,6 +2,29 @@
 
 All notable changes to GitHub HTML Preview are documented here.
 
+## Unreleased
+
+### Fixed
+
+- Render relative repository/gist images, including private screenshots,
+  responsive `srcset`/`picture` candidates, and SVG named views.
+- Recognize current `gist.github.com` Raw links.
+- Keep body downloads under the HTML timeout and handle body-read failures.
+- Preserve local fragment navigation and authored base-element ordering.
+
+### Changed
+
+- Separate browser-neutral applications from the Chrome extension adapter and
+  inject the browser's artifact renderer.
+- Validate control/cache messages against their active frame, origin, and source.
+- Bound image downloads, preparation duration, and embedded data URL expansion.
+- Reuse prepared reports across preview modes without parsing or fetching again.
+
+### Developer experience
+
+- Enforce the browser API boundary with lint and expose application cleanup.
+- Add image-decoding and supported-surface Chromium regression fixtures.
+
 ## [1.5.0] - 2026-08-05
 
 ### Added

@@ -122,7 +122,7 @@ npm test
 # build → dist/
 npm run build
 
-# real-Chrome acceptance tests (builds first, loads dist/ in Chromium, hits github.com)
+# Chromium acceptance tests (builds first; deterministic fixtures + live GitHub)
 npm run test:e2e
 
 # lint
@@ -131,3 +131,11 @@ npm run lint
 
 Load it in Chrome: `chrome://extensions` → enable Developer mode → **Load
 unpacked** → pick `dist/`. Then open any `.html` file on GitHub.
+
+Acceptance fixtures exercise image decoding through the complete preview frame
+chain for blob pages, oversized files, gists, and both classic and React PR
+diffs. They also cover auto-open links from trees, READMEs, issues, and PR
+descriptions; cached inline/fullscreen transitions; signed raw source URLs;
+responsive images; SVG views; and sandbox isolation. Unit tests cover the
+context-menu adapter and relay, URL guards, download limits, and lifecycle
+cleanup. Live GitHub tests verify current blob selectors and navigation.
