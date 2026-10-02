@@ -132,6 +132,7 @@ export class PreviewController {
   /** Tear everything down (used when the content script unloads). */
   destroy(): void {
     this.target = null;
+    this.override = null;
     this.removePullRequestButtons();
     this.enforce();
   }

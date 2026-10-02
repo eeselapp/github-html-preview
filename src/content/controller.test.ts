@@ -93,6 +93,25 @@ describe('button injection', () => {
   });
 });
 
+describe('content lifecycle cleanup', () => {
+  it.each(['inline', 'fullscreen'] as const)('destroys an ad-hoc preview in %s mode and restores the page', mode => {
+    const { controller } = setup();
+    controller.sync();
+    controller.openPreview('https://github.com/o/r/raw/main/report.html');
+    if (mode === 'fullscreen') controller.requestMode(mode);
+    expect(present(mode === 'fullscreen' ? OVERLAY : PANEL)).toBe(true);
+
+    controller.destroy();
+
+    expect(present(PANEL)).toBe(false);
+    expect(present(OVERLAY)).toBe(false);
+    expect(present(BTN)).toBe(false);
+    expect(document.querySelector('[data-eesel-ghp-hidden]')).toBeNull();
+    expect(document.documentElement.style.overflow).toBe('');
+    expect(document.body.style.overflow).toBe('');
+  });
+});
+
 describe('pull request diff buttons', () => {
   const HEAD_SHA = 'ccee6080fad6210342bb5dab9ac1b8115553d5a1';
   const PR_PAGE = `

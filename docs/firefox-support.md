@@ -1,5 +1,18 @@
 # Firefox support plan
 
+## Foundation in place
+
+The application now separates browser APIs from its core. The Chrome adapter
+in `src/platform/chrome.ts` implements the scoped contracts in
+`src/platform/extension.ts`; content, preview, and background applications
+consume those contracts and have fake-platform unit tests. The preview entry
+selects a renderer, so a Firefox entry can choose an interactive or static
+strategy without adding browser checks to the application.
+
+This does not ship Firefox support. The current Vite/CRXJS manifest and package
+still target Chrome; Firefox adapters, renderer selection, compatibility tests,
+packaging, and Mozilla review remain planned work below.
+
 ## Proposed support matrix
 
 | Browser | Preview capability | Renderer |
@@ -114,8 +127,8 @@ single dual-mode artifact remains preferable.
 - Add a stable `browser_specific_settings.gecko.id`.
 - Declare Firefox data-collection permissions, using required `none` while the
   extension performs no data collection.
-- Normalize asynchronous extension calls through `browser.*` plus a polyfill or
-  a small typed adapter.
+- Implement a Firefox adapter for the existing scoped platform contracts,
+  normalizing asynchronous extension calls through `browser.*`.
 - Add `moz-extension://` development handling.
 - Produce separate Chrome ZIP and Firefox XPI build outputs.
 - Add `web-ext lint`, Firefox packaging, and signing steps only after the AMO
@@ -177,4 +190,3 @@ signed and policy-reviewed, so it is not a dependable bypass.
 - [Firefox background compatibility](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/background)
 - [Firefox version compatibility](https://extensionworkshop.com/documentation/publish/version-compatibility/)
 - [Mozilla add-on policies](https://extensionworkshop.com/documentation/publish/add-on-policies/)
-

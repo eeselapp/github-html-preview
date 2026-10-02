@@ -28,7 +28,7 @@ content script (github.com / gist.github.com)
         ▼
 preview.html   (privileged extension page; web-accessible)
   reads ?src=<raw url>&theme=<light|dark>, fetches it WITH your session,
-  enforces a 5 MB cap + error UI, and (fullscreen) shows a branded navbar
+  prepares embedded images + error UI, and (fullscreen) shows a branded navbar
         │  postMessage(html)
         ▼
 sandbox.html   (manifest sandbox page — opaque origin, lenient CSP, no cookies/APIs)
@@ -89,6 +89,22 @@ Why a separate sandbox page instead of a plain child iframe: `srcdoc`/`blob:`/
 `data:` documents inherit the embedder's CSP, so the privileged page's strict
 `script-src 'self'` would block the artifact's inline scripts. A manifest
 `sandbox.pages` page gets the lenient `content_security_policy.sandbox` instead.
+
+## Browser architecture
+
+The application core uses ordinary Web APIs: GitHub URL detection, content UI
+and navigation, artifact fetching/preparation, and preview rendering. The three
+entry files wire that core to `src/platform/chrome.ts`; only this adapter calls
+Chrome extension APIs. Small interfaces in `src/platform/extension.ts` describe
+resource URLs, preferences, context-menu events, and tab messaging without
+Chrome types. Applications expose explicit lifecycles so tests can supply fake
+platforms and release listeners, observers, frames, and pending UI work.
+
+The preview entry also chooses its renderer. Chrome uses the manifest sandbox
+renderer; another browser can choose that strategy or provide a static renderer
+without changing the preview application. The build and manifest still target
+Chrome. This prepares for other browsers; Firefox packaging and renderer
+compatibility remain work described in [the Firefox plan](docs/firefox-support.md).
 
 ## Develop
 
